@@ -100,6 +100,12 @@ function Overview({ project, ds, report: r, fixed, update }: TabProps) {
             {r.tokens.overCtx ? <><b className="warn-text">{fmtN(r.tokens.overCtx)} rows</b> run past the context window and would lose about {fmtCompact(r.tokens.truncated)} tokens, usually the answer. </> : 'Every row fits the context window. '}
             Prompt tokens {fmtPct(r.tokens.total ? r.tokens.prompt / r.tokens.total : 0)}, completion {fmtPct(r.tokens.total ? r.tokens.completion / r.tokens.total : 0)}.
           </p>
+          <div className="tok-stats">
+            <div><small>Median</small><b>{fmtN(r.tokens.p50)}</b></div>
+            <div><small>p95</small><b>{fmtN(r.tokens.p95)}</b></div>
+            <div><small>Longest</small><b>{fmtN(r.tokens.max)}</b></div>
+            <div><small>Over context</small><b className={r.tokens.overCtx ? 'warn-text' : ''}>{fmtN(r.tokens.overCtx)}</b></div>
+          </div>
         </div>
       </div>
 
@@ -112,7 +118,7 @@ function Overview({ project, ds, report: r, fixed, update }: TabProps) {
           <div><small>Estimated cost</small><b>{fmtUsd(r.cost.usd)}</b>{after && <span className="good-text small">→ {fmtUsd(after.cost.usd)}</span>}</div>
           <div><small>Estimated time</small><b>{fmtHours(r.cost.hours)}</b>{after && <span className="muted small">→ {fmtHours(after.cost.hours)}</span>}</div>
         </div>
-        <p className="muted small" style={{ margin: 0 }}>Token counts are estimates (within about 5% of cl100k on chat data; see <Link href="/docs#tokens">docs</Link>). Preference pairs bill both sequences. Price is whatever you entered; check your provider.</p>
+        <p className="muted small" style={{ margin: 0 }}>Token counts are estimates (within about 3% of cl100k per turn on chat data; see <Link href="/docs#tokens">docs</Link>). Preference pairs bill both sequences. Price is whatever you entered; check your provider.</p>
       </div>
     </>
   )
@@ -122,20 +128,21 @@ function Overview({ project, ds, report: r, fixed, update }: TabProps) {
 
 function Issues({ ds, report: r }: TabProps) {
   const q0 = new URLSearchParams(location.search)
-  const [code, setCode] = useState<IssueCode | 'all' | 'errors'>((q0.get('code') as IssueCode) ?? 'all')
+  const [code, setCode] = useState<IssueCode | 'all' | 'errors' | 'serious'>((q0.get('code') as IssueCode) ?? 'serious')
   const [text, setText] = useState('')
   const [limit, setLimit] = useState(200)
   const { show, modal } = useRowModal(ds.rows)
-  const list = useMemo(() => r.issues.filter(i => (code === 'all' || (code === 'errors' ? ISSUES[i.code].sev === 'error' : i.code === code)) && (!text || (i.message + ' ' + (i.file ?? '') + ':' + i.line).toLowerCase().includes(text.toLowerCase()))), [r, code, text])
+  const list = useMemo(() => r.issues.filter(i => (code === 'all' || (code === 'errors' ? ISSUES[i.code].sev === 'error' : code === 'serious' ? ISSUES[i.code].sev !== 'info' : i.code === code)) && (!text || (i.message + ' ' + (i.file ?? '') + ':' + i.line).toLowerCase().includes(text.toLowerCase()))), [r, code, text])
   const csv = () => 'file,line,severity,code,message\n' + list.map(i => [i.file ?? '', i.line, ISSUES[i.code].sev, i.code, `"${i.message.replace(/"/g, '""')}"`].join(',')).join('\n')
   return (
     <div className="panel">
-      <div className="row between wrap gap" style={{ marginBottom: 12 }}>
+      <div className="row between wrap gap issue-filters" style={{ marginBottom: 12 }}>
         <div className="row gap wrap">
           <label className="sr-only" htmlFor="code">Issue type</label>
           <select id="code" value={code} onChange={e => { setCode(e.target.value as IssueCode); setLimit(200) }}>
-            <option value="all">All issues ({fmtN(r.issues.length)})</option>
-            <option value="errors">Errors only</option>
+            <option value="serious">Errors and warnings ({fmtN(r.issues.filter(i => ISSUES[i.code].sev !== 'info').length)})</option>
+            <option value="errors">Errors only ({fmtN(r.issues.filter(i => ISSUES[i.code].sev === 'error').length)})</option>
+            <option value="all">Everything, including info ({fmtN(r.issues.length)})</option>
             {(Object.keys(ISSUES) as IssueCode[]).filter(c => r.counts[c]).map(c => <option key={c} value={c}>{ISSUES[c].label} ({fmtN(r.counts[c]!)})</option>)}
           </select>
           <input type="search" placeholder="Filter by text or line" value={text} onChange={e => setText(e.target.value)} aria-label="Filter issues" />

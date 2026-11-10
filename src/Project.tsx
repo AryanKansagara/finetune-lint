@@ -17,7 +17,7 @@ export interface TabProps {
   fixed: Fixed | null
   update(p: Partial<Project>): void
   /** Replaces the working dataset and records a version */
-  commit(ds: Dataset, label: string, note: string): Promise<void>
+  commit(ds: Dataset, label: string, note: string, patch?: Partial<Project>): Promise<void>
 }
 
 export default function ProjectView({ id, tab: rawTab }: { id: string; tab: string }) {
@@ -31,13 +31,13 @@ export default function ProjectView({ id, tab: rawTab }: { id: string; tab: stri
 
   const setTab = (t: Tab) => go(`/app/p/${id}${t === 'overview' ? '' : '/' + t}`, { keepScroll: true })
 
-  const commit = async (next: Dataset, label: string, note: string) => {
+  const commit = async (next: Dataset, label: string, note: string, patch: Partial<Project> = {}) => {
     if (!project) return
     const r = await runJob<Report>({ kind: 'analyze', rows: next.rows, opts: project.opts, parseErrors: next.parseErrors })
     const v = await makeVersion(project.id, next, r, label, note)
     await putData(project.id, next)
     setDs(next)
-    await update({ versions: [...project.versions, v], dataMissing: false })
+    await update({ ...patch, versions: [...project.versions, v], dataMissing: false })
   }
 
   const saveVersion = async () => {

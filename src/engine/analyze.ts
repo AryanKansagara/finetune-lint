@@ -141,7 +141,10 @@ export function analyze(rows: Row[], opts: Options = DEFAULT_OPTIONS, parseError
     if (sev === 'error') errorSet.add(x.row)
     if (sev !== 'info') warnSet.add(x.row)
   }
-  issues.sort((a, b) => (a.file ?? '').localeCompare(b.file ?? '') || a.line - b.line)
+  // Files in import order (train before eval when imported that way), then by line.
+  const fileOrder = new Map<string, number>()
+  for (const x of [...rows, ...parseErrors]) if (!fileOrder.has(x.file ?? '')) fileOrder.set(x.file ?? '', fileOrder.size)
+  issues.sort((a, b) => (fileOrder.get(a.file ?? '') ?? 0) - (fileOrder.get(b.file ?? '') ?? 0) || a.line - b.line)
 
   return {
     n: rows.length, nTrain: trainIdx.length, nEval: evalIdx.length,

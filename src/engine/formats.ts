@@ -16,7 +16,7 @@ const SHAREGPT_ROLE: Record<string, string> = { human: 'user', user: 'user', gpt
 
 /** Maps the role spellings found in the wild onto system/user/assistant/tool. Unknown spellings are returned unchanged. */
 export const ROLE_SYNONYMS: Record<string, string> = {
-  ...SHAREGPT_ROLE, bot: 'assistant', model: 'assistant', ai: 'assistant', chatgpt: 'assistant', claude: 'assistant', response: 'assistant',
+  ...SHAREGPT_ROLE, bot: 'assistant', model: 'assistant', ai: 'assistant', chatgpt: 'assistant', response: 'assistant',
   instruction: 'user', prompt: 'user', question: 'user', customer: 'user', function: 'tool', function_response: 'tool', ipython: 'tool', developer: 'system',
 }
 export const normaliseRole = (r: string) => ROLE_SYNONYMS[r.trim().toLowerCase()] ?? r
