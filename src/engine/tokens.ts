@@ -1,9 +1,9 @@
 // Tokenizer-free token estimate that mimics byte-level BPE (GPT-4 / Llama 3 family).
 // Text is pre-split with the same kind of regex those tokenizers use (words with their leading space,
 // 1-3 digit number chunks, punctuation runs, whitespace), then each piece is charged by length and script.
-// Measured against cl100k_base on mixed English chat, support transcripts and code: mean absolute error
-// about 4% per document and under 2% on dataset totals (see /docs). Expect wider error on CJK, emoji-heavy
-// text and minified code. Real Llama 3 / Qwen tokenizers land within a few percent of cl100k on English.
+// Measured against tiktoken cl100k_base: 2.9% mean absolute error per turn and +1.8% on the total for the
+// synthetic support chats; 6.5% per document and +3.4% in total on 72 README files (markdown, URLs, code).
+// Against o200k_base: 4.4% per turn. Expect wider error on CJK, emoji-heavy text and minified code.
 import type { Msg, Row } from './types.ts'
 
 export const PRE = /'(?:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+/giu
