@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { DEFAULT_OPTIONS, type Options } from './engine/analyze.ts'
+import { DEFAULT_OPTIONS, FIREWORKS_TRAIN_PRICES, PRICES_AS_OF, type Options } from './engine/analyze.ts'
 import { csvToRecords, guessCsvMapping, parseRecords, parseText, type CsvMapping, type CsvRole } from './engine/formats.ts'
 import { sampleFiles } from './engine/sample.ts'
 import { FORMAT_LABEL, type Format, type Issue, type Row } from './engine/types.ts'
@@ -175,11 +175,25 @@ export function ProjectSettings({ project, update, compact }: { project: Project
           <select value={o.ctx} onChange={e => set({ ctx: Number(e.target.value) })}>{CTX.map(c => <option key={c} value={c}>{c.toLocaleString()}</option>)}</select>
         </label>
         <label className="field"><span>Price per 1M training tokens ($)</span><input type="number" min="0" step="0.05" value={o.pricePerM} onChange={e => set({ pricePerM: num(e.target.value, 0, DEFAULT_OPTIONS.pricePerM) })} /></label>
+        <PricePreset value={o.pricePerM} onPick={v => set({ pricePerM: v })} />
         <label className="field"><span>Epochs</span><input type="number" min="1" max="50" step="1" value={o.epochs} onChange={e => set({ epochs: Math.round(num(e.target.value, 1, 1)) })} /></label>
         {!compact && <label className="field"><span>Throughput (tokens / second)</span><input type="number" min="100" step="500" value={o.throughput} onChange={e => set({ throughput: num(e.target.value, 1, DEFAULT_OPTIONS.throughput) })} /></label>}
         {!compact && <label className="field"><span>Near-duplicate threshold ({Math.round(o.nearThreshold * 100)}% similar)</span><input type="range" min="0.5" max="0.98" step="0.02" value={o.nearThreshold} onChange={e => set({ nearThreshold: Number(e.target.value) })} /></label>}
       </div>
-      {!compact && <p className="muted small" style={{ margin: '10px 0 0' }}>No default price is a quote. Enter the rate from your provider&rsquo;s pricing page for the model size you are tuning (<Link href="/docs#cost">how the estimate works</Link>).</p>}
+      {!compact && <p className="muted small" style={{ margin: '10px 0 0' }}>No default price is a quote. Pick a Fireworks serverless rate (published {PRICES_AS_OF}) or enter the rate from your provider&rsquo;s pricing page for the model you are tuning (<Link href="/docs#cost">how the estimate works</Link>).</p>}
     </div>
+  )
+}
+
+/** Sets the price from Fireworks' published serverless train rates. */
+export function PricePreset({ value, onPick }: { value: number; onPick: (v: number) => void }) {
+  const hit = FIREWORKS_TRAIN_PRICES.find(([, p]) => p === value)
+  return (
+    <label className="field"><span>Fireworks rate ({PRICES_AS_OF})</span>
+      <select value={hit ? hit[0] : ''} onChange={e => { const p = FIREWORKS_TRAIN_PRICES.find(([m]) => m === e.target.value); if (p) onPick(p[1]) }}>
+        <option value="">Custom price</option>
+        {FIREWORKS_TRAIN_PRICES.map(([m, p]) => <option key={m} value={m}>{m}: ${p}/1M</option>)}
+      </select>
+    </label>
   )
 }

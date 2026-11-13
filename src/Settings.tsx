@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PricePreset } from './Import.tsx'
 import { FIX_LABEL, type FixSet } from './engine/fixes.ts'
 import { TARGET_LABEL, type Target } from './engine/formats.ts'
 import { deleteProject, getDefaults, getProjects, setDefaults, type Defaults } from './store.ts'
@@ -25,6 +26,7 @@ export default function Settings() {
         <div className="inline-fields">
           <label className="field"><span>Context length</span><select value={d.opts.ctx} onChange={e => opt({ ctx: Number(e.target.value) })}>{CTX.map(c => <option key={c} value={c}>{c.toLocaleString()}</option>)}</select></label>
           <label className="field"><span>Price per 1M training tokens ($)</span><input type="number" min="0" step="0.05" value={d.opts.pricePerM} onChange={e => opt({ pricePerM: Math.max(0, Number(e.target.value)) })} /></label>
+          <PricePreset value={d.opts.pricePerM} onPick={v => opt({ pricePerM: v })} />
           <label className="field"><span>Epochs</span><input type="number" min="1" max="50" value={d.opts.epochs} onChange={e => opt({ epochs: Math.max(1, Math.round(Number(e.target.value))) })} /></label>
           <label className="field"><span>Throughput (tokens / second)</span><input type="number" min="100" step="500" value={d.opts.throughput} onChange={e => opt({ throughput: Math.max(100, Number(e.target.value)) })} /></label>
           <label className="field"><span>Near-duplicate threshold ({Math.round(d.opts.nearThreshold * 100)}%)</span><input type="range" min="0.5" max="0.98" step="0.02" value={d.opts.nearThreshold} onChange={e => opt({ nearThreshold: Number(e.target.value) })} /></label>

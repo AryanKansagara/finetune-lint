@@ -8,7 +8,10 @@ function checkTurns(msgs: Msg[], line: number, out: Issue[], where = '') {
   msgs.forEach((m, i) => {
     const t = i + 1
     if (!STD.has(m.role)) out.push({ line, turn: t, code: 'bad_role', message: `Turn ${t}${where} has role "${m.role || '(missing)'}"; expected system, user, assistant or tool.` })
-    if (!m.content.trim() && !m.tool_calls?.length) out.push({ line, turn: t, code: 'empty_turn', message: `Turn ${t}${where} (${m.role || 'no role'}) is empty.` })
+    if (m.weight !== undefined && m.weight !== 0 && m.weight !== 1) out.push({ line, turn: t, code: 'bad_weight', message: `Turn ${t}${where} has weight ${JSON.stringify(m.weight)}; weight must be 0 or 1.` })
+    else if (m.weight !== undefined && m.role !== 'assistant') out.push({ line, turn: t, code: 'bad_weight', message: `Turn ${t}${where} is ${m.role || 'roleless'} but has a weight; only assistant turns take one.` })
+    if (m.function_call && (typeof m.function_call.name !== 'string' || typeof m.function_call.arguments !== 'string')) out.push({ line, turn: t, code: 'tool_schema', message: `Turn ${t}${where}: function_call needs a string name and JSON-encoded string arguments.` })
+    if (!m.content.trim() && !m.tool_calls?.length && !m.function_call) out.push({ line, turn: t, code: 'empty_turn', message: `Turn ${t}${where} (${m.role || 'no role'}) is empty.` })
     if (m.role === 'system' && i > 0) out.push({ line, turn: t, code: 'system_not_first', message: `System prompt at turn ${t}${where}; most chat templates only accept it first.` })
     if (i > 0 && m.role === msgs[i - 1].role && m.role !== 'tool' && STD.has(m.role)) out.push({ line, turn: t, code: 'consecutive_roles', message: `Turns ${t - 1} and ${t}${where} are both ${m.role}.` })
     for (const [k, c] of (m.tool_calls ?? []).entries()) {
@@ -47,9 +50,11 @@ export function validateRow(r: Row): Issue[] {
   checkTurns(r.messages, line, out)
   if (!r.messages.some(m => m.role === 'user')) out.push({ line, code: 'no_user', message: 'There is no user turn to learn from.' })
   const last = r.messages.at(-1)!
+  const asst = r.messages.filter(m => m.role === 'assistant')
+  if (asst.length && asst.every(m => m.weight === 0)) out.push({ line, code: 'nothing_to_learn', message: 'Every assistant turn has weight 0, so this row contributes no training signal but is still billed.' })
   if (last.role !== 'assistant') out.push({ line, turn: r.messages.length, code: 'no_assistant_final', message: `Ends on a ${last.role || 'roleless'} turn; the last turn is what the model is trained to produce, so it should be the assistant.` })
   return out
 }
 
 /** Rows with an error-severity structural problem; fine-tuning services reject these. */
-export const BLOCKING = new Set(['bad_role', 'empty_turn', 'no_user', 'no_assistant_final', 'tool_schema', 'dpo_missing', 'empty_conversation'])
+export const BLOCKING = new Set(['bad_role', 'empty_turn', 'no_user', 'no_assistant_final', 'tool_schema', 'dpo_missing', 'empty_conversation', 'bad_weight'])

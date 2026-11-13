@@ -27,6 +27,8 @@ function toMsg(m: unknown): Msg {
   if (Array.isArray(m.tool_calls)) out.tool_calls = m.tool_calls as ToolCall[]
   if (typeof m.tool_call_id === 'string') out.tool_call_id = m.tool_call_id
   if (typeof m.name === 'string') out.name = m.name
+  if ('weight' in m) out.weight = m.weight
+  if (isObj(m.function_call)) out.function_call = m.function_call
   return out
 }
 
@@ -36,9 +38,20 @@ function sharegptMsg(m: unknown): Msg {
   return { role: SHAREGPT_ROLE[raw.toLowerCase()] ?? raw, content: contentText(m.value ?? m.content) }
 }
 
-/** A string becomes one turn of the given role; an array is read as messages. */
+const TRANSCRIPT = /(?:^|\n\n)(Human|Assistant|User|H|A):[ \t]?/g
+const TRANSCRIPT_ROLE: Record<string, string> = { Human: 'user', User: 'user', H: 'user', Assistant: 'assistant', A: 'assistant' }
+
+/** Splits an Anthropic HH-style transcript ("\n\nHuman: ...\n\nAssistant: ...") into turns; null when the text is not one. */
+export function splitTranscript(s: string): Msg[] | null {
+  if (!/^\s*(Human|User|H):/.test(s) || !/\n\n(Assistant|A):/.test(s)) return null
+  const marks = [...s.matchAll(TRANSCRIPT)]
+  return marks.map((m, i) => ({ role: TRANSCRIPT_ROLE[m[1]], content: s.slice(m.index! + m[0].length, marks[i + 1]?.index ?? s.length).trim() }))
+}
+
+/** A string becomes one turn of the given role (or several, if it is a Human/Assistant transcript); an array is read as messages. */
 function turns(v: unknown, role: string): Msg[] {
   if (Array.isArray(v)) return v.map(toMsg)
+  if (typeof v === 'string') { const t = splitTranscript(v); if (t) return t }
   if (isObj(v) && 'role' in v) return [toMsg(v)]
   return [{ role, content: contentText(v) }]
 }
@@ -57,19 +70,28 @@ export function normalise(o: unknown, line: number): Row | null {
   const label = pickLabel(o)
   // OpenAI preference fine-tuning: { input: { messages }, preferred_output, non_preferred_output }
   if (isObj(o.input) && Array.isArray(o.input.messages) && 'preferred_output' in o) {
-    return { line, format: 'dpo', messages: o.input.messages.map(toMsg), chosen: turns(o.preferred_output, 'assistant'), rejected: turns(o.non_preferred_output, 'assistant'), label, extra: extras(o, ['input', 'preferred_output', 'non_preferred_output', ...LABEL_KEYS]) }
+    // input.tools and input.parallel_tool_calls are hoisted to the row and put back on export.
+    const inner = extras(o.input, ['messages']) ?? {}
+    return { line, format: 'dpo', messages: o.input.messages.map(toMsg), chosen: turns(o.preferred_output, 'assistant'), rejected: turns(o.non_preferred_output, 'assistant'), label, extra: extras({ ...o, ...inner }, ['input', 'preferred_output', 'non_preferred_output', ...LABEL_KEYS]) }
   }
   if ('chosen' in o || 'rejected' in o) {
-    const prompt = 'prompt' in o ? turns(o.prompt, 'user') : Array.isArray(o.messages) ? o.messages.map(toMsg) : []
+    // Prompt key varies: prompt (TRL, UltraFeedback), question (Intel orca_dpo_pairs), input/instruction (distilabel, Alpaca-style DPO).
+    const pk = ['prompt', 'question', 'input', 'instruction'].find(k => typeof o[k] === 'string' || Array.isArray(o[k]))
+    const prompt = pk ? turns(o[pk], 'user') : Array.isArray(o.messages) ? o.messages.map(toMsg) : []
     if ('system' in o && typeof o.system === 'string' && o.system) prompt.unshift({ role: 'system', content: o.system })
     let chosen = turns(o.chosen, 'assistant'), rejected = turns(o.rejected, 'assistant')
-    // Some exports put the whole conversation in chosen/rejected with the prompt repeated; strip the shared prefix.
-    if (!prompt.length && chosen.length > 1 && rejected.length > 1) {
+    const same = (a: Msg, b: Msg) => a.role === b.role && a.content.trim() === b.content.trim()
+    // Some exports repeat the prompt at the start of chosen and rejected (UltraFeedback); drop the repeat.
+    let p = 0
+    while (p < prompt.length && p < chosen.length - 1 && p < rejected.length - 1 && same(prompt[p], chosen[p]) && same(prompt[p], rejected[p])) p++
+    if (p === prompt.length && p > 0) { chosen = chosen.slice(p); rejected = rejected.slice(p) }
+    // Others put the whole conversation in chosen/rejected (HH-RLHF); the shared prefix is the prompt.
+    if (!prompt.some(m => m.role !== 'system') && chosen.length > 1 && rejected.length > 1) {
       let k = 0
-      while (k < chosen.length - 1 && k < rejected.length - 1 && chosen[k].role === rejected[k].role && chosen[k].content === rejected[k].content) k++
+      while (k < chosen.length - 1 && k < rejected.length - 1 && same(chosen[k], rejected[k])) k++
       prompt.push(...chosen.slice(0, k)); chosen = chosen.slice(k); rejected = rejected.slice(k)
     }
-    return { line, format: 'dpo', messages: prompt, chosen, rejected, label, extra: extras(o, ['prompt', 'messages', 'chosen', 'rejected', 'system', ...LABEL_KEYS]) }
+    return { line, format: 'dpo', messages: prompt, chosen, rejected, label, extra: extras(o, [pk ?? 'prompt', 'messages', 'chosen', 'rejected', 'system', ...LABEL_KEYS]) }
   }
   if (Array.isArray(o.messages)) return { line, format: 'openai', messages: o.messages.map(toMsg), label, extra: extras(o, ['messages', ...LABEL_KEYS]) }
   if (Array.isArray(o.conversations)) {
@@ -205,6 +227,8 @@ const plain = (m: Msg) => {
   if (m.tool_calls) o.tool_calls = m.tool_calls
   if (m.tool_call_id) o.tool_call_id = m.tool_call_id
   if (m.name) o.name = m.name
+  if (m.function_call) o.function_call = m.function_call
+  if (m.weight !== undefined) o.weight = m.weight
   return o
 }
 const SHARE_FROM: Record<string, string> = { user: 'human', assistant: 'gpt', system: 'system', tool: 'tool' }
@@ -219,7 +243,11 @@ export function convert(r: Row, target: Target): Obj | { skip: string } {
   }
   if (isPref) {
     if (target !== 'openai') return { skip: 'preference pairs export to OpenAI or TRL format' }
-    return { ...keep, input: { messages: r.messages.map(plain) }, preferred_output: (r.chosen ?? []).map(plain), non_preferred_output: (r.rejected ?? []).map(plain) }
+    const { tools, parallel_tool_calls, ...rest } = keep as Obj
+    const input: Obj = { messages: r.messages.map(plain) }
+    if (tools !== undefined) input.tools = tools
+    if (parallel_tool_calls !== undefined) input.parallel_tool_calls = parallel_tool_calls
+    return { ...rest, input, preferred_output: (r.chosen ?? []).map(plain), non_preferred_output: (r.rejected ?? []).map(plain) }
   }
   if (target === 'openai') return { ...keep, messages: r.messages.map(plain) }
   if (target === 'sharegpt') {

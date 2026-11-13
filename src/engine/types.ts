@@ -1,5 +1,6 @@
 export interface ToolCall { id?: unknown; type?: unknown; function?: { name?: unknown; arguments?: unknown } }
-export interface Msg { role: string; content: string; tool_calls?: ToolCall[]; tool_call_id?: string; name?: string }
+/** `weight` (0 or 1) is OpenAI's per-turn training mask; `function_call` is the legacy single-call form. Both are kept for export. */
+export interface Msg { role: string; content: string; tool_calls?: ToolCall[]; tool_call_id?: string; name?: string; weight?: unknown; function_call?: { name?: unknown; arguments?: unknown } }
 
 export type Format = 'openai' | 'sharegpt' | 'alpaca' | 'dpo'
 export const FORMAT_LABEL: Record<Format, string> = {
@@ -40,6 +41,8 @@ export const ISSUES = {
   no_assistant_final: { sev: 'error', label: 'Does not end on an assistant turn' },
   tool_schema: { sev: 'error', label: 'Tool-call schema' },
   dpo_missing: { sev: 'error', label: 'Missing chosen or rejected' },
+  bad_weight: { sev: 'error', label: 'Invalid turn weight' },
+  nothing_to_learn: { sev: 'warn', label: 'Every assistant turn has weight 0' },
   system_not_first: { sev: 'warn', label: 'System prompt not first' },
   consecutive_roles: { sev: 'warn', label: 'Same role twice in a row' },
   over_context: { sev: 'warn', label: 'Longer than the context window' },

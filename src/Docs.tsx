@@ -1,3 +1,4 @@
+import { FIREWORKS_TRAIN_PRICES, PRICES_AS_OF } from './engine/analyze.ts'
 import { Code, Link } from './ui.tsx'
 
 const TOC: [string, string][] = [['formats', 'Accepted formats'], ['export', 'Getting your data out'], ['checks', 'What is checked'], ['tokens', 'Token estimate'], ['dupes', 'Duplicates and leakage'], ['cost', 'Cost and time'], ['split', 'Split and export'], ['privacy', 'Privacy and sync']]
@@ -15,6 +16,7 @@ export default function Docs() {
       <h3>OpenAI chat (also Fireworks, Together, Axolotl <code>chat_template</code>)</h3>
       <Code label="JSONL" code={`{"messages": [{"role": "system", "content": "You are a support agent."}, {"role": "user", "content": "Where is my order?"}, {"role": "assistant", "content": "It shipped yesterday."}]}`} />
       <p>Tool calls follow the OpenAI schema: an assistant turn with <code>tool_calls: [{'{'}id, type: "function", function: {'{'}name, arguments{'}'}{'}'}]</code> where <code>arguments</code> is a JSON <em>string</em>, then a <code>tool</code> turn whose <code>tool_call_id</code> matches.</p>
+      <p>A per-turn <code>weight</code> of 0 or 1 on assistant turns (OpenAI&rsquo;s way to exclude a turn from the loss) is checked and kept on export; a row whose assistant turns are all weight 0 is flagged because it is billed but teaches nothing. The legacy <code>function_call</code> form is accepted and kept.</p>
       <h3>ShareGPT</h3>
       <Code label="JSONL" code={`{"conversations": [{"from": "human", "value": "Where is my order?"}, {"from": "gpt", "value": "It shipped yesterday."}]}`} />
       <h3>Alpaca</h3>
@@ -22,7 +24,7 @@ export default function Docs() {
       <p><code>prompt</code>/<code>completion</code> and <code>question</code>/<code>answer</code> pairs are read the same way.</p>
       <h3>Preference pairs (DPO, ORPO, KTO-style)</h3>
       <Code label="JSONL (TRL)" code={`{"prompt": [{"role": "user", "content": "Can I return worn boots?"}], "chosen": [{"role": "assistant", "content": "Yes, within 60 days..."}], "rejected": [{"role": "assistant", "content": "No."}]}`} />
-      <p>Plain strings for prompt/chosen/rejected work too, as does OpenAI&rsquo;s <code>input</code> / <code>preferred_output</code> / <code>non_preferred_output</code> shape. A <code>label</code>, <code>class</code>, <code>category</code> or <code>intent</code> field is used for class balance and stratified splits.</p>
+      <p>Plain strings for prompt/chosen/rejected work too, as does OpenAI&rsquo;s <code>input</code> / <code>preferred_output</code> / <code>non_preferred_output</code> shape (its <code>input.tools</code> and <code>parallel_tool_calls</code> are kept on export). Public preference sets read as published: Anthropic HH-RLHF (<code>chosen</code>/<code>rejected</code> as <code>Human: ... Assistant: ...</code> transcripts, split into turns with the shared history as the prompt), UltraFeedback binarized (prompt repeated at the start of chosen/rejected, dropped) and Intel/Argilla orca DPO pairs (<code>system</code> + <code>question</code> or <code>input</code>). A <code>label</code>, <code>class</code>, <code>category</code> or <code>intent</code> field is used for class balance and stratified splits.</p>
       <h3>CSV</h3>
       <p>Columns are guessed from their headers (<code>instruction</code>, <code>prompt</code>, <code>output</code>, <code>response</code>, <code>chosen</code>, <code>rejected</code>, <code>label</code>, <code>messages</code>...) and you can remap each one before importing. Quoted fields with newlines are fine; line numbers point at the line where the record starts.</p>
       <p>Parquet is not read in the browser. Convert it first: <code>pd.read_parquet("train.parquet").to_json("train.jsonl", orient="records", lines=True)</code>.</p>
@@ -62,6 +64,7 @@ export default function Docs() {
       <h2 id="cost">Cost and time</h2>
       <p><code>training tokens = Σ min(row tokens, context) over train rows × epochs</code>. Preference pairs count both sequences (prompt + chosen and prompt + rejected). <code>cost = training tokens / 1,000,000 × price</code>; <code>time = training tokens / throughput</code>.</p>
       <p>The default price of $0.50 per million training tokens and 6,000 tokens per second are placeholders, not quotes. Providers price fine-tuning by model size and method (LoRA vs full, SFT vs DPO), and change prices often. Enter the rate from your provider&rsquo;s pricing page on the day you plan the run, and treat the time as a rough order of magnitude.</p>
+      <p>The <b>Fireworks rate</b> picker fills in the Serverless Training API &ldquo;Train&rdquo; rate per million tokens as published on <a href="https://fireworks.ai/pricing" target="_blank" rel="noreferrer">fireworks.ai/pricing</a> on {PRICES_AS_OF}: {FIREWORKS_TRAIN_PRICES.map(([m, p]) => `${m} $${p}`).join(', ')}. Serverless billing also charges prefill and sampling tokens (repeated prefixes 80% off), which this estimate leaves out; full-parameter and dedicated training are billed per GPU-hour instead. Check the page again before a large run.</p>
 
       <h2 id="split">Split and export</h2>
       <p>The split is stratified by class label when there is one, otherwise by token-length quartile, so eval looks like train. Exact and near-duplicate clusters are assigned as a unit, so a fresh split cannot leak. It is seeded by the version number, so it is reproducible.</p>
