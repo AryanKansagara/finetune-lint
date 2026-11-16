@@ -10,7 +10,7 @@ import { validateRow } from './validate.ts'
 const codes = (r: Row) => validateRow(r).map(i => i.code)
 const one = (o: unknown) => { const p = parseText(JSON.stringify(o)); assert.equal(p.errors.length, 0, JSON.stringify(p.errors)); return p.rows[0] }
 
-// Anthropic/hh-rlhf: chosen and rejected are full transcripts that share the history.
+// hh-rlhf: chosen and rejected are full transcripts that share the history.
 const HH = { chosen: '\n\nHuman: How do I keep basil alive indoors?\n\nAssistant: Give it a sunny window and water when the top inch is dry.\n\nHuman: How often is that?\n\nAssistant: Usually every three or four days.', rejected: '\n\nHuman: How do I keep basil alive indoors?\n\nAssistant: Give it a sunny window and water when the top inch is dry.\n\nHuman: How often is that?\n\nAssistant: Whenever.' }
 
 test('HH-RLHF transcripts split into turns with the shared history as the prompt', () => {

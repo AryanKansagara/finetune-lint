@@ -41,7 +41,7 @@ function sharegptMsg(m: unknown): Msg {
 const TRANSCRIPT = /(?:^|\n\n)(Human|Assistant|User|H|A):[ \t]?/g
 const TRANSCRIPT_ROLE: Record<string, string> = { Human: 'user', User: 'user', H: 'user', Assistant: 'assistant', A: 'assistant' }
 
-/** Splits an Anthropic HH-style transcript ("\n\nHuman: ...\n\nAssistant: ...") into turns; null when the text is not one. */
+/** Splits an HH-RLHF-style transcript ("\n\nHuman: ...\n\nAssistant: ...") into turns; null when the text is not one. */
 export function splitTranscript(s: string): Msg[] | null {
   if (!/^\s*(Human|User|H):/.test(s) || !/\n\n(Assistant|A):/.test(s)) return null
   const marks = [...s.matchAll(TRANSCRIPT)]
