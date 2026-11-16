@@ -180,7 +180,7 @@ export function ProjectSettings({ project, update, compact }: { project: Project
         {!compact && <label className="field"><span>Throughput (tokens / second)</span><input type="number" min="100" step="500" value={o.throughput} onChange={e => set({ throughput: num(e.target.value, 1, DEFAULT_OPTIONS.throughput) })} /></label>}
         {!compact && <label className="field"><span>Near-duplicate threshold ({Math.round(o.nearThreshold * 100)}% similar)</span><input type="range" min="0.5" max="0.98" step="0.02" value={o.nearThreshold} onChange={e => set({ nearThreshold: Number(e.target.value) })} /></label>}
       </div>
-      {!compact && <p className="muted small" style={{ margin: '10px 0 0' }}>No default price is a quote. Pick a Fireworks serverless rate (published {PRICES_AS_OF}) or enter the rate from your provider&rsquo;s pricing page for the model you are tuning (<Link href="/docs#cost">how the estimate works</Link>).</p>}
+      {!compact && <p className="muted small" style={{ margin: '10px 0 0' }}>Prices change often. Pick a Fireworks serverless rate (published {PRICES_AS_OF}) or enter the rate from your provider&rsquo;s pricing page for the model you are tuning (<Link href="/docs#cost">how the estimate works</Link>).</p>}
     </div>
   )
 }

@@ -22,7 +22,7 @@ export const FIREWORKS_TRAIN_PRICES: [string, number][] = [
   ['Qwen 3.6 35B A3B', 2.14], ['NVIDIA Nemotron 3.5 Super VL 120B', 2.32], ['Qwen 3.8 27B', 4.103], ['DeepSeek V4.1 Flash 1017', 4.98],
   ['Muse Glimmer 30B', 5.86], ['GLM 5.3 Flash', 8.89], ['GLM 5.3', 14.58], ['Muse Spark Open', 18.58], ['Kimi K3', 32.55],
 ]
-export const DEFAULT_OPTIONS: Options = { ctx: 4096, pricePerM: 0.5, epochs: 3, throughput: 6000, nearThreshold: 0.8 }
+export const DEFAULT_OPTIONS: Options = { ctx: 4096, pricePerM: 2.14, epochs: 3, throughput: 6000, nearThreshold: 0.8 }
 
 export const HIST_EDGES = [0, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, Infinity]
 export const histogram = (xs: number[], edges = HIST_EDGES) => edges.slice(0, -1).map((lo, i) => xs.filter(x => x >= lo && x < edges[i + 1]).length)

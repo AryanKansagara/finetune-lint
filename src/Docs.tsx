@@ -63,7 +63,7 @@ export default function Docs() {
 
       <h2 id="cost">Cost and time</h2>
       <p><code>training tokens = Σ min(row tokens, context) over train rows × epochs</code>. Preference pairs count both sequences (prompt + chosen and prompt + rejected). <code>cost = training tokens / 1,000,000 × price</code>; <code>time = training tokens / throughput</code>.</p>
-      <p>The default price of $0.50 per million training tokens and 6,000 tokens per second are placeholders, not quotes. Providers price fine-tuning by model size and method (LoRA vs full, SFT vs DPO), and change prices often. Enter the rate from your provider&rsquo;s pricing page on the day you plan the run, and treat the time as a rough order of magnitude.</p>
+      <p>New datasets start at $2.14 per million training tokens (the cheapest Fireworks serverless train rate below) and 6,000 tokens per second; the throughput is a placeholder, not a measurement. Providers price fine-tuning by model size and method (LoRA vs full, SFT vs DPO), and change prices often. Enter the rate from your provider&rsquo;s pricing page on the day you plan the run, and treat the time as a rough order of magnitude.</p>
       <p>The <b>Fireworks rate</b> picker fills in the Serverless Training API &ldquo;Train&rdquo; rate per million tokens as published on <a href="https://fireworks.ai/pricing" target="_blank" rel="noreferrer">fireworks.ai/pricing</a> on {PRICES_AS_OF}: {FIREWORKS_TRAIN_PRICES.map(([m, p]) => `${m} $${p}`).join(', ')}. Serverless billing also charges prefill and sampling tokens (repeated prefixes 80% off), which this estimate leaves out; full-parameter and dedicated training are billed per GPU-hour instead. Check the page again before a large run.</p>
 
       <h2 id="split">Split and export</h2>

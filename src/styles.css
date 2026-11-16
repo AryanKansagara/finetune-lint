@@ -541,3 +541,4 @@ table.ba { width: 100%; }
 
 .issue-filters select, .issue-filters input { width: auto; min-width: 220px; }
 .dup-list .linkish { font: 12.5px var(--font-mono); text-align: left; word-break: break-all; }
+.docs p code, .docs li code { overflow-wrap: anywhere; }
