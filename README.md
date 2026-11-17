@@ -30,4 +30,4 @@ npm run build
 
 Cloud sync needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in `.env` (see `.env.example`); without them the app runs local-only.
 
-Built by Aryan Kansagara. Independent project, not affiliated with Fireworks AI.
+Built by Aryan Kansagara.
