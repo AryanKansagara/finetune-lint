@@ -1,7 +1,7 @@
 import { importFile, jsonl, newDataset, tab } from '../helpers.ts'
 import { expect, test } from '../fixtures.ts'
 
-test.fail('#20 many small classes still give the eval share that was asked for', async ({ page }) => {
+test('#20 many small classes still give the eval share that was asked for', async ({ page }) => {
   // 10 classes of 4 rows, 10% eval share: 4 of 40 rows belong in eval. Rounding each class alone gives 0.
   const w = 'apple bridge candle desert engine forest garden hammer island jungle kettle ladder magnet needle orange pepper quartz rocket saddle tunnel umbrella valley window yellow zebra anchor basket copper dragon empire fabric guitar hollow insect jacket kitten lemon mirror nickel oyster'.split(' ')
   await newDataset(page)
