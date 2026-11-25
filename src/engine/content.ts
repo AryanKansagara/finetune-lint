@@ -158,7 +158,8 @@ export function redact(text: string): { text: string; hits: PiiHit[] } {
 
 const REFUSAL = /\b(?:I'?m sorry,? but I (?:can(?:'|no)?t|am unable|won'?t)|I (?:cannot|can'?t|am unable to|won'?t) (?:help|assist|provide|comply|do that|share)|as an AI(?: language model)?\b|I(?:'m| am) (?:just |only )?an AI\b|I(?:'m| am) not able to (?:help|provide|assist)|I must (?:respectfully )?decline|against my (?:guidelines|programming|policies)|I don'?t have (?:the ability|access) to (?:browse|access real-time))/i
 
-export const isRefusal = (s: string) => REFUSAL.test(s)
+/** Chat UIs write I can’t with a curly apostrophe; both spellings count. */
+export const isRefusal = (s: string) => REFUSAL.test(s.replace(/[\u2018\u2019\u02bc\uff07]/g, "'"))
 
 /** First five normalised words of a reply; used to find openers repeated across the dataset. */
 export const opener = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}'\s]+/gu, ' ').split(/\s+/).filter(Boolean).slice(0, 5).join(' ')
