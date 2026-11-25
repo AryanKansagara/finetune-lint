@@ -27,7 +27,9 @@ const SECRET = [
   /\bAIza[0-9A-Za-z_-]{35}\b/g,
   /\bhf_[A-Za-z0-9]{30,}\b/g,
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|$)/g,
-  /\b(?:api[_-]?key|secret|access[_-]?token|password)\b\s*[:=]\s*["']?[A-Za-z0-9_\-./+]{12,}/gi,
+  /\b(?:\w*_)?(?:api[_-]?key|secret|access[_-]?token|password)\b\s*[:=]\s*["']?[A-Za-z0-9_\-./+]{12,}/gi,
+  // A quoted key ({"api_key": "..."}): only the value, so the JSON around it stays readable.
+  /(?<=\b(?:\w*_)?(?:api[_-]?key|secret|access[_-]?token|password)\\?["']\s*\]?\s*[:=]\s*(?:\\?["'])?)[A-Za-z0-9_\-./+]{12,}/gi,
 ]
 const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g
 const CARD = /\b\d(?:[ -]?\d){12,18}\b/g
