@@ -57,7 +57,8 @@ function turns(v: unknown, role: string): Msg[] {
 }
 
 const LABEL_KEYS = ['label', 'class', 'category', 'intent']
-const pickLabel = (o: Obj) => { for (const k of LABEL_KEYS) if (typeof o[k] === 'string' || typeof o[k] === 'number') return String(o[k]); return undefined }
+/** The class of a record: the first label-like field that holds text or a number. The field itself stays in `extra`, under its own name and type. */
+export const pickLabel = (o: Obj) => { for (const k of LABEL_KEYS) if (typeof o[k] === 'string' || typeof o[k] === 'number') return String(o[k]); return undefined }
 function extras(o: Obj, used: string[]) {
   const e: Obj = {}
   for (const k of Object.keys(o)) if (!used.includes(k)) e[k] = o[k]
@@ -71,8 +72,8 @@ export function normalise(o: unknown, line: number): Row | null {
   // OpenAI preference fine-tuning: { input: { messages }, preferred_output, non_preferred_output }
   if (isObj(o.input) && Array.isArray(o.input.messages) && 'preferred_output' in o) {
     // input.tools and input.parallel_tool_calls are hoisted to the row and put back on export.
-    const inner = extras(o.input, ['messages']) ?? {}
-    return { line, format: 'dpo', messages: o.input.messages.map(toMsg), chosen: turns(o.preferred_output, 'assistant'), rejected: turns(o.non_preferred_output, 'assistant'), label, extra: extras({ ...o, ...inner }, ['input', 'preferred_output', 'non_preferred_output', ...LABEL_KEYS]) }
+    const inner = extras(o.input, ['messages', ...LABEL_KEYS]) ?? {}
+    return { line, format: 'dpo', messages: o.input.messages.map(toMsg), chosen: turns(o.preferred_output, 'assistant'), rejected: turns(o.non_preferred_output, 'assistant'), label, extra: extras({ ...o, ...inner }, ['input', 'preferred_output', 'non_preferred_output']) }
   }
   if ('chosen' in o || 'rejected' in o) {
     // Prompt key varies: prompt (TRL, UltraFeedback), question (Intel orca_dpo_pairs), input/instruction (distilabel, Alpaca-style DPO).
@@ -99,13 +100,13 @@ export function normalise(o: unknown, line: number): Row | null {
       while (k < chosen.length - 1 && k < rejected.length - 1 && same(chosen[k], rejected[k])) k++
       prompt.push(...chosen.slice(0, k)); chosen = chosen.slice(k); rejected = rejected.slice(k)
     }
-    return { line, format: 'dpo', messages: prompt, chosen, rejected, label, extra: extras(o, [...promptKeys, 'messages', 'chosen', 'rejected', 'system', ...LABEL_KEYS]) }
+    return { line, format: 'dpo', messages: prompt, chosen, rejected, label, extra: extras(o, [...promptKeys, 'messages', 'chosen', 'rejected', 'system']) }
   }
-  if (Array.isArray(o.messages)) return { line, format: 'openai', messages: o.messages.map(toMsg), label, extra: extras(o, ['messages', ...LABEL_KEYS]) }
+  if (Array.isArray(o.messages)) return { line, format: 'openai', messages: o.messages.map(toMsg), label, extra: extras(o, ['messages']) }
   if (Array.isArray(o.conversations)) {
     const messages = o.conversations.map(sharegptMsg)
     if (typeof o.system === 'string' && o.system) messages.unshift({ role: 'system', content: o.system })
-    return { line, format: 'sharegpt', messages, label, extra: extras(o, ['conversations', 'system', ...LABEL_KEYS]) }
+    return { line, format: 'sharegpt', messages, label, extra: extras(o, ['conversations', 'system']) }
   }
   const instr = o.instruction ?? o.prompt ?? o.question
   const out = o.output ?? o.completion ?? o.response ?? o.answer
@@ -115,7 +116,7 @@ export function normalise(o: unknown, line: number): Row | null {
     const input = str(o.input ?? '')
     messages.push({ role: 'user', content: str(instr) + (input.trim() ? '\n\n' + input : '') })
     messages.push({ role: 'assistant', content: str(out) })
-    return { line, format: 'alpaca', messages, label, extra: extras(o, ['instruction', 'prompt', 'question', 'input', 'output', 'completion', 'response', 'answer', 'system', ...LABEL_KEYS]) }
+    return { line, format: 'alpaca', messages, label, extra: extras(o, ['instruction', 'prompt', 'question', 'input', 'output', 'completion', 'response', 'answer', 'system']) }
   }
   return null
 }
@@ -255,7 +256,8 @@ const SHARE_FROM: Record<string, string> = { user: 'human', assistant: 'gpt', sy
 
 /** Converts one row to the target shape, or returns a reason it cannot be represented there. */
 export function convert(r: Row, target: Target): Obj | { skip: string } {
-  const keep = { ...(r.extra ?? {}), ...(r.label !== undefined ? { label: r.label } : {}) }
+  // Rows stored by earlier versions have the label only as text.
+  const keep = { ...(r.extra ?? {}), ...(r.label !== undefined && pickLabel(r.extra ?? {}) === undefined ? { label: r.label } : {}) }
   const isPref = r.format === 'dpo'
   if (target === 'trl-dpo') {
     if (!isPref) return { skip: 'not a preference pair' }

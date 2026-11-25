@@ -18,9 +18,9 @@ export interface Row {
   messages: Msg[]
   chosen?: Msg[]
   rejected?: Msg[]
-  /** Explicit class/label field when the source has one */
+  /** The class as text, when the source has a label field (the field itself is in `extra`) */
   label?: string
-  /** Fields we do not interpret but keep on export (id, tools, metadata) */
+  /** Fields kept as they are on export (id, tools, metadata, label fields) */
   extra?: Record<string, unknown>
   /** Which side of the train/eval split the row is on (imported eval files, or a generated split) */
   split?: 'train' | 'eval'
