@@ -49,7 +49,7 @@ export function App() {
           {r.page === 'docs' && <Docs />}
           {r.page === 'settings' && <Settings />}
           {r.page === 'workspace' && <Workspace />}
-          {r.page === 'project' && <ProjectView id={r.id} tab={r.tab} />}
+          {r.page === 'project' && <ProjectView key={r.id} id={r.id} tab={r.tab} />}
           {r.page === '404' && <NotFound />}
         </Suspense>
       </main>

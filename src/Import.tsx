@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_OPTIONS, FIREWORKS_TRAIN_PRICES, PRICES_AS_OF, type Options } from './engine/analyze.ts'
 import { csvToRecords, guessCsvMapping, parseRecords, parseText, type CsvMapping, type CsvRole } from './engine/formats.ts'
 import { sampleFiles } from './engine/sample.ts'
 import { FORMAT_LABEL, type Format, type Issue, type Row } from './engine/types.ts'
 import { validateRow } from './engine/validate.ts'
+import type { Commit } from './Project.tsx'
 import { createBlankProject } from './projectData.ts'
 import { putData, saveProject, uuid, type Dataset, type Project } from './store.ts'
 import { RAW_SYNC_LIMIT, useSync } from './sync.ts'
@@ -20,10 +21,18 @@ function parsePending(p: Pending): { rows: Row[]; errors: Issue[]; formats: Part
   return parseRecords(records, errors)
 }
 
-export default function DataTab({ project, ds, update, commit }: { project: Project; ds: Dataset; update(p: Partial<Project>): void; commit(ds: Dataset, label: string, note: string, patch?: Partial<Project>): Promise<void> }) {
-  const [pending, setPending] = useState<Pending[]>([])
+/** Files still waiting when an import into a sample moves on to the new dataset it starts. */
+let handover: { id: string; files: Pending[] } | null = null
+
+export default function DataTab({ project, ds, update, commit }: { project: Project; ds: Dataset; update(p: Partial<Project>): void; commit: Commit }) {
+  const [pending, setPending] = useState<Pending[]>(() => handover?.id === project.id ? handover.files : [])
+  useEffect(() => { handover = null }, [])
+  const latest = useRef(pending)
+  latest.current = pending
+  const waiting = (p: Pending) => latest.current.some(y => y.id !== p.id)
   const [drag, setDrag] = useState(false)
   const [busy, setBusy] = useState(false)
+  const moving = useRef(false)
   const input = useRef<HTMLInputElement>(null)
   const sync = useSync()
   const rawSize = useMemo(() => JSON.stringify(ds).length, [ds])
@@ -55,20 +64,25 @@ export default function DataTab({ project, ds, update, commit }: { project: Proj
     const errors = parsed.errors.map(e => ({ ...e, file: p.name }))
     const meta = { id: uuid(), fileName: p.name, split: p.split, rows: rows.length, errors: errors.length, at: Date.now(), kind: p.kind }
     if (project.sampleId) {
+      if (moving.current) return
+      moving.current = true
       const t = await createBlankProject(p.name.replace(/\.(jsonl?|csv|tsv)$/i, ''))
       const next = { rows, parseErrors: errors }
       await putData(t.id, next)
       await saveProject({ ...t, imports: [meta] })
-      go(`/app/p/${t.id}`)
+      if (waiting(p)) handover = { id: t.id, files: latest.current.filter(y => y.id !== p.id) }
+      go(`/app/p/${t.id}${waiting(p) ? '/data' : ''}`)
       toast(`Started a new dataset from ${p.name}`, { tone: 'ok' })
       return
     }
     if (mode === 'replace' && ds.rows.length && !(await ask('Replace the dataset?', `The current ${fmtN(ds.rows.length)} rows are replaced by ${fmtN(rows.length)} rows from ${p.name}. Earlier versions stay in History and can be restored.`, 'Replace', false))) return
-    const keep = mode === 'append' ? ds : { rows: [], parseErrors: [] }
-    const next = { rows: [...keep.rows, ...rows], parseErrors: [...keep.parseErrors, ...errors] }
-    await commit(next, 'import', `${mode === 'append' ? 'Added' : 'Imported'} ${p.name} (${fmtN(rows.length)} rows as ${p.split})`, { imports: [...(mode === 'append' ? project.imports : []), meta] })
+    const append = mode === 'append'
+    // Stay here while files are waiting: leaving this tab would throw them away.
+    if (waiting(p)) go(`/app/p/${project.id}/data`, { keepScroll: true })
+    await commit(cur => append ? { rows: [...cur.rows, ...rows], parseErrors: [...cur.parseErrors, ...errors] } : { rows, parseErrors: errors }, 'import', `${append ? 'Added' : 'Imported'} ${p.name} (${fmtN(rows.length)} rows as ${p.split})`, cur => ({ imports: [...(append ? cur.imports : []), meta] }))
+    const stay = waiting(p)
     setPending(x => x.filter(y => y.id !== p.id))
-    if (!ds.rows.length) go(`/app/p/${project.id}`)
+    if (!ds.rows.length && !stay) go(`/app/p/${project.id}`)
     toast(`Imported ${fmtN(rows.length)} rows${errors.length ? `; ${errors.length} lines could not be read` : ''}`, { tone: 'ok' })
   }
 
