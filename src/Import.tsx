@@ -66,7 +66,7 @@ export default function DataTab({ project, ds, update, commit }: { project: Proj
     if (mode === 'replace' && ds.rows.length && !(await ask('Replace the dataset?', `The current ${fmtN(ds.rows.length)} rows are replaced by ${fmtN(rows.length)} rows from ${p.name}. Earlier versions stay in History and can be restored.`, 'Replace', false))) return
     const keep = mode === 'append' ? ds : { rows: [], parseErrors: [] }
     const next = { rows: [...keep.rows, ...rows], parseErrors: [...keep.parseErrors, ...errors] }
-    await commit(next, `v${project.versions.length + 1} · import`, `${mode === 'append' ? 'Added' : 'Imported'} ${p.name} (${fmtN(rows.length)} rows as ${p.split})`, { imports: [...(mode === 'append' ? project.imports : []), meta] })
+    await commit(next, 'import', `${mode === 'append' ? 'Added' : 'Imported'} ${p.name} (${fmtN(rows.length)} rows as ${p.split})`, { imports: [...(mode === 'append' ? project.imports : []), meta] })
     setPending(x => x.filter(y => y.id !== p.id))
     if (!ds.rows.length) go(`/app/p/${project.id}`)
     toast(`Imported ${fmtN(rows.length)} rows${errors.length ? `; ${errors.length} lines could not be read` : ''}`, { tone: 'ok' })

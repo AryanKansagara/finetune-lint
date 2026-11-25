@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import type { Report } from './engine/analyze.ts'
 import { makeVersion, runJob, useFixed, useProject, useReport, type Fixed } from './projectData.ts'
-import { putData, type Dataset, type Project } from './store.ts'
+import { getProject, putData, type Dataset, type Project } from './store.ts'
 import { Empty, fmtN, go, isTyping, Link, Modal, SyntheticBadge, toast } from './ui.tsx'
 
 const Tabs = lazy(() => import('./Tabs.tsx'))
@@ -16,7 +16,7 @@ export interface TabProps {
   report: Report
   fixed: Fixed | null
   update(p: Partial<Project>): void
-  /** Replaces the working dataset and records a version */
+  /** Replaces the working dataset and records a version; `label` is what it is called after its number */
   commit(ds: Dataset, label: string, note: string, patch?: Partial<Project>): Promise<void>
 }
 
@@ -34,10 +34,14 @@ export default function ProjectView({ id, tab: rawTab }: { id: string; tab: stri
   const commit = async (next: Dataset, label: string, note: string, patch: Partial<Project> = {}) => {
     if (!project) return
     const r = await runJob<Report>({ kind: 'analyze', rows: next.rows, opts: project.opts, parseErrors: next.parseErrors })
-    const v = await makeVersion(project.id, next, r, label, note)
+    // An undo runs long after the render it was made in, so the versions are read from the store, not from `project`.
+    const cur = getProject(project.id)
+    if (!cur) return
+    const n = cur.versions.length + 1
+    const v = await makeVersion(project.id, next, r, `v${n} · ${label}`, note)
     await putData(project.id, next)
     setDs(next)
-    await update({ ...patch, versions: [...project.versions, v], dataMissing: false })
+    await update({ ...patch, versions: [...cur.versions, v], dataMissing: false })
   }
 
   const saveVersion = async () => {

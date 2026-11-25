@@ -6,7 +6,7 @@ import { parseText } from './engine/formats.ts'
 import { SAMPLES, sampleFiles } from './engine/sample.ts'
 import type { Issue, Row } from './engine/types.ts'
 import { KEY_CAP, type Version } from './engine/versions.ts'
-import { getData, getDefaults, getProjects, putVersionData, saveProject, useProjects, uuid, type Dataset, type ImportMeta, type Project } from './store.ts'
+import { getData, getDefaults, getProject, getProjects, putVersionData, saveProject, useProjects, uuid, type Dataset, type ImportMeta, type Project } from './store.ts'
 import type { Job } from './worker.ts'
 
 // ---------- Worker client ----------
@@ -87,7 +87,8 @@ export function useProject(id: string) {
     void getData(project.id).then(d => { if (live) setDs(d ?? ((project.sampleId && sampleDataset(project.sampleId)) || { rows: [], parseErrors: [] })) })
     return () => { live = false }
   }, [project?.id, project?.sampleId, importsKey])
-  const update = (patch: Partial<Project>) => project && saveProject({ ...project, ...patch })
+  // Merged into the stored project: a caller may have been made in an earlier render.
+  const update = (patch: Partial<Project>) => { const cur = project && getProject(project.id); return cur && saveProject({ ...cur, ...patch }) }
   return { loading: list === null || (project !== null && ds === null), project, ds, setDs, update }
 }
 
