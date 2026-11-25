@@ -3,7 +3,7 @@ import { Bars, TokenHist } from './charts.tsx'
 import { summarise, type Summary } from './engine/analyze.ts'
 import { LANG_NAME, PII_LABEL, type PiiType } from './engine/content.ts'
 import { FIX_LABEL, makeSplit, type FixSet } from './engine/fixes.ts'
-import { TARGET_LABEL, toJsonl, type Target } from './engine/formats.ts'
+import { csvCell, TARGET_LABEL, toJsonl, type Target } from './engine/formats.ts'
 import { FORMAT_LABEL, ISSUES, type Format, type IssueCode, type Msg, type Row } from './engine/types.ts'
 import { diffVersions } from './engine/versions.ts'
 import { ProjectSettings } from './Import.tsx'
@@ -133,7 +133,7 @@ function Issues({ ds, report: r }: TabProps) {
   const [limit, setLimit] = useState(200)
   const { show, modal } = useRowModal(ds.rows)
   const list = useMemo(() => r.issues.filter(i => (code === 'all' || (code === 'errors' ? ISSUES[i.code].sev === 'error' : code === 'serious' ? ISSUES[i.code].sev !== 'info' : i.code === code)) && (!text || (i.message + ' ' + (i.file ?? '') + ':' + i.line).toLowerCase().includes(text.toLowerCase()))), [r, code, text])
-  const csv = () => 'file,line,severity,code,message\n' + list.map(i => [i.file ?? '', i.line, ISSUES[i.code].sev, i.code, `"${i.message.replace(/"/g, '""')}"`].join(',')).join('\n')
+  const csv = () => 'file,line,severity,code,message\n' + list.map(i => [csvCell(i.file ?? ''), i.line, ISSUES[i.code].sev, i.code, `"${i.message.replace(/"/g, '""')}"`].join(',')).join('\n')
   return (
     <div className="panel">
       <div className="row between wrap gap issue-filters" style={{ marginBottom: 12 }}>
