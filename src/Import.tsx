@@ -43,7 +43,12 @@ export default function DataTab({ project, ds, update, commit }: { project: Proj
     for (const f of [...files]) {
       if (f.size > 200_000_000) { toast(`${f.name} is over 200 MB. Split it or lint a sample of it first.`, { tone: 'error' }); continue }
       if (/\.parquet$/i.test(f.name)) { toast(`${f.name}: Parquet is not read in the browser. Convert with pandas: pd.read_parquet(f).to_json("data.jsonl", orient="records", lines=True)`, { tone: 'error', ttl: 9000 }); continue }
-      const text = await f.text()
+      let text: string
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(await f.arrayBuffer()) } catch (e) {
+        if (!(e instanceof TypeError)) throw e
+        toast(`${f.name} is not UTF-8, so some letters would come out damaged. Save it as UTF-8 (in Excel: CSV UTF-8) and import it again.`, { tone: 'error', ttl: 9000 })
+        continue
+      }
       if (!text.trim()) { toast(`${f.name} is empty.`, { tone: 'error' }); continue }
       const head = text.trimStart()
       const kind = head.startsWith('[') && /\.json$/i.test(f.name) ? 'json' : head.startsWith('{') || head.startsWith('[') ? 'jsonl' : 'csv'
