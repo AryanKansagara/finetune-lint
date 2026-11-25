@@ -12,6 +12,26 @@ function contentText(c: unknown): string {
   return c == null ? '' : str(c)
 }
 
+const MEDIA_KEY = /^(?:input_)?(?:image|audio|video|file)(?:_url)?$|^document$/
+/** The kind of a content part that is not text, or null. A text part says so, or has no type and holds a text. */
+function partKind(p: unknown): string | null {
+  if (!isObj(p)) return null
+  const type = typeof p.type === 'string' ? p.type.trim() : ''
+  if (MEDIA_KEY.test(type.toLowerCase())) return type
+  // Parts of one column are often padded with nulls, so only a key with a value counts.
+  const media = Object.keys(p).find(k => MEDIA_KEY.test(k) && p[k] != null && p[k] !== '')
+  if (media) return media
+  if (/^(?:input_|output_)?text$/i.test(type)) return null
+  const text = p.text ?? p.content
+  return text == null || Array.isArray(text) ? type || Object.keys(p)[0] || 'empty' : null
+}
+/** Kinds of the parts that `contentText` cannot keep. */
+function lostParts(c: unknown): string[] | undefined {
+  const list = Array.isArray(c) ? c : isObj(c) && MEDIA_KEY.test(str(c.type).toLowerCase()) ? [c] : []
+  const kinds = [...new Set(list.map(partKind).filter(k => k !== null))]
+  return kinds.length ? kinds : undefined
+}
+
 const SHAREGPT_ROLE: Record<string, string> = { human: 'user', user: 'user', gpt: 'assistant', assistant: 'assistant', system: 'system', tool: 'tool', observation: 'tool', function_call: 'assistant' }
 
 /** Maps the role spellings found in the wild onto system/user/assistant/tool. Unknown spellings are returned unchanged. */
@@ -29,13 +49,16 @@ function toMsg(m: unknown): Msg {
   if (typeof m.name === 'string') out.name = m.name
   if ('weight' in m) out.weight = m.weight
   if (isObj(m.function_call)) out.function_call = m.function_call
+  const lost = lostParts(m.content)
+  if (lost) out.lostParts = lost
   return out
 }
 
 function sharegptMsg(m: unknown): Msg {
   if (!isObj(m)) return { role: '', content: str(m) }
   const raw = str(m.from ?? m.role).trim()
-  return { role: SHAREGPT_ROLE[raw.toLowerCase()] ?? raw, content: contentText(m.value ?? m.content) }
+  const c = m.value ?? m.content, lost = lostParts(c)
+  return { role: SHAREGPT_ROLE[raw.toLowerCase()] ?? raw, content: contentText(c), ...(lost ? { lostParts: lost } : {}) }
 }
 
 const TRANSCRIPT = /(?:^|\n\n)(Human|Assistant|User|H|A):[ \t]?/g
@@ -53,7 +76,8 @@ function turns(v: unknown, role: string): Msg[] {
   if (Array.isArray(v)) return v.map(toMsg)
   if (typeof v === 'string') { const t = splitTranscript(v); if (t) return t }
   if (isObj(v) && 'role' in v) return [toMsg(v)]
-  return [{ role, content: contentText(v) }]
+  const lost = lostParts(v)
+  return [{ role, content: contentText(v), ...(lost ? { lostParts: lost } : {}) }]
 }
 
 const LABEL_KEYS = ['label', 'class', 'category', 'intent']
@@ -114,8 +138,10 @@ export function normalise(o: unknown, line: number): Row | null {
     const messages: Msg[] = []
     if (typeof o.system === 'string' && o.system) messages.push({ role: 'system', content: o.system })
     const input = str(o.input ?? '')
-    messages.push({ role: 'user', content: str(instr) + (input.trim() ? '\n\n' + input : '') })
-    messages.push({ role: 'assistant', content: str(out) })
+    // Answers may well be JSON, so only known media parts count in these fields.
+    const media = (...vs: unknown[]) => { const l = vs.flatMap(v => lostParts(v) ?? []).filter(k => MEDIA_KEY.test(k.toLowerCase())); return l.length ? { lostParts: [...new Set(l)] } : {} }
+    messages.push({ role: 'user', content: str(instr) + (input.trim() ? '\n\n' + input : ''), ...media(instr, o.input) })
+    messages.push({ role: 'assistant', content: str(out), ...media(out) })
     return { line, format: 'alpaca', messages, label, extra: extras(o, ['instruction', 'prompt', 'question', 'input', 'output', 'completion', 'response', 'answer', 'system']) }
   }
   return null
@@ -256,6 +282,7 @@ const SHARE_FROM: Record<string, string> = { user: 'human', assistant: 'gpt', sy
 
 /** Converts one row to the target shape, or returns a reason it cannot be represented there. */
 export function convert(r: Row, target: Target): Obj | { skip: string } {
+  if ([...r.messages, ...(r.chosen ?? []), ...(r.rejected ?? [])].some(m => m.lostParts)) return { skip: 'image, audio and other non-text parts are not kept' }
   // Rows stored by earlier versions have the label only as text.
   const keep = { ...(r.extra ?? {}), ...(r.label !== undefined && pickLabel(r.extra ?? {}) === undefined ? { label: r.label } : {}) }
   const isPref = r.format === 'dpo'

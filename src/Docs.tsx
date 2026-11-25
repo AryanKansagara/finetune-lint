@@ -41,7 +41,7 @@ export default function Docs() {
 
       <h2 id="checks">What is checked</h2>
       <ul>
-        <li><b>Structure</b>: invalid JSON and unrecognised shapes (with line numbers), roles outside system/user/assistant/tool, empty turns, no user turn, a final turn that is not the assistant, system prompts after the first turn, back-to-back turns from the same role, tool-call schema (name, JSON-string arguments, id, matching tool results).</li>
+        <li><b>Structure</b>: invalid JSON and unrecognised shapes (with line numbers), roles outside system/user/assistant/tool, empty turns, no user turn, a final turn that is not the assistant, system prompts after the first turn, back-to-back turns from the same role, image, audio and other non-text parts (such rows are reported and not exported), tool-call schema (name, JSON-string arguments, id, matching tool results).</li>
         <li><b>Length</b>: estimated tokens per row against the context length you train at. Rows over it are truncated by the trainer, usually from the end, which deletes the answer you wanted it to learn.</li>
         <li><b>Duplicates and leakage</b>: see below.</li>
         <li><b>Personal data and secrets</b>: email addresses, phone numbers (10 to 15 digits), card numbers that pass the Luhn checksum, US SSNs, and API keys (OpenAI, Fireworks, AWS, GitHub, Slack, Google, Hugging Face, private key blocks, <code>api_key=</code> assignments). Regex based: it catches the common cases, not names or street addresses.</li>
