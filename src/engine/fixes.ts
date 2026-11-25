@@ -20,7 +20,7 @@ export interface FixSet {
   dropIdenticalPairs: boolean
 }
 export const FIX_LABEL: Record<keyof FixSet, [string, string]> = {
-  normaliseRoles: ['Normalise roles', 'Map human/gpt/bot/model to user/assistant, move system prompts first, merge back-to-back turns from the same role.'],
+  normaliseRoles: ['Normalise roles', 'Map human/gpt/bot/model to user/assistant, move system prompts first, merge back-to-back turns from the same role (unless their weight, name or calls differ).'],
   stripPii: ['Strip personal data', 'Replace emails, phone numbers, Luhn-valid card numbers, SSNs and API keys with [EMAIL], [PHONE], [CARD], [SSN], [SECRET].'],
   dropInvalid: ['Drop broken rows', 'Remove rows that still fail structural checks (empty turns, unknown roles, no final assistant turn, bad tool calls).'],
   dedupeExact: ['Remove exact duplicates', 'Keep the first copy of every row whose normalised text repeats.'],
@@ -32,14 +32,24 @@ export const FIX_LABEL: Record<keyof FixSet, [string, string]> = {
 }
 export const DEFAULT_FIXES: FixSet = { normaliseRoles: true, stripPii: true, dropInvalid: true, dedupeExact: true, dedupeNear: true, dropLeaks: true, trimToContext: true, dropRefusals: false, dropIdenticalPairs: true }
 
+const isBlank = (m: Msg) => !m.content.trim() && !m.tool_calls?.length && !m.function_call
+/** A weight of 1 is the default; only assistant turns have one. */
+const effWeight = (m: Msg) => m.role === 'assistant' ? m.weight ?? 1 : undefined
+/** Whether two turns of one role can become one without losing a call, a name or a training mask. */
+const mergeable = (a: Msg, b: Msg) => !a.tool_calls && !b.tool_calls && !a.function_call && !b.function_call && a.name === b.name && a.tool_call_id === b.tool_call_id && effWeight(a) === effWeight(b)
+
 function normaliseTurns(ms: Msg[]): Msg[] {
   const mapped = ms.map(m => ({ ...m, role: normaliseRole(m.role) }))
-  const sys = mapped.filter(m => m.role === 'system' && m.content.trim())
+  const sys: Msg[] = mapped.filter(m => m.role === 'system' && m.content.trim()).map(m => ({ role: 'system', content: m.content, ...(m.name ? { name: m.name } : {}) }))
   const rest = mapped.filter(m => m.role !== 'system')
-  const out: Msg[] = sys.length ? [{ role: 'system', content: sys.map(m => m.content).join('\n\n') }] : []
-  for (const m of rest) {
+  const out: Msg[] = []
+  for (const m of [...sys, ...rest]) {
     const prev = out.at(-1)
-    if (prev && prev.role === m.role && m.role !== 'tool' && !prev.tool_calls && !m.tool_calls) prev.content = [prev.content, m.content].filter(s => s.trim()).join('\n\n')
+    if (!prev || prev.role !== m.role || m.role === 'tool' || prev.tool_calls || m.tool_calls) out.push({ ...m })
+    // An empty turn has nothing to lose, whatever its weight or name.
+    else if (isBlank(m)) continue
+    else if (isBlank(prev)) out[out.length - 1] = { ...m }
+    else if (mergeable(prev, m)) { prev.content += '\n\n' + m.content; if (prev.weight === undefined && m.role === 'assistant' && m.weight != null) prev.weight = m.weight }
     else out.push({ ...m })
   }
   return out
