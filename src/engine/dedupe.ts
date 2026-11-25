@@ -2,7 +2,11 @@
 // then confirm each candidate pair by its estimated Jaccard similarity.
 import type { Msg, Row } from './types.ts'
 
-export const normText = (s: string) => s.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}\s]+/gu, ' ').replace(/\s+/g, ' ').trim()
+// Vowel signs (Hindi, Thai, Tamil...) are letters of the word although Unicode files them under marks. Accents that stay
+// separate on a Latin letter, and variation selectors (emoji), still count as punctuation.
+const PUNCT = /[^\p{L}\p{M}\p{N}\s]+|[︀-️\u{e0100}-\u{e01ef}]+/gu
+const LATIN = /\p{Script=Latin}/u
+export const normText = (s: string) => s.toLowerCase().normalize('NFKC').replace(PUNCT, ' ').replace(/(\p{L}?)(\p{M}+)/gu, (m, letter) => letter && !LATIN.test(letter) ? m : letter + ' ').replace(/\s+/g, ' ').trim()
 
 const joinTurns = (ms: Msg[] | undefined) => (ms ?? []).filter(m => m.role !== 'system').map(m => `${m.role}: ${m.content}${m.tool_calls?.length ? ' ' + JSON.stringify(m.tool_calls) : ''}`).join('\n')
 /** Everything the model trains on for this row, minus system prompts (a shared system prompt would make every row look alike). */
