@@ -8,7 +8,7 @@ import { FORMAT_LABEL, ISSUES, type Format, type IssueCode, type Msg, type Row }
 import { diffVersions } from './engine/versions.ts'
 import { ProjectSettings } from './Import.tsx'
 import type { Tab, TabProps } from './Project.tsx'
-import { delVersionData, getVersionData, putData } from './store.ts'
+import { delVersionData, getVersionData } from './store.ts'
 import { deleteVersionCloud } from './sync.ts'
 import { ask, Code, download, Empty, fmtCompact, fmtDateTime, fmtHours, fmtN, fmtPct, fmtUsd, go, Link, Modal, signed, toast } from './ui.tsx'
 
@@ -278,15 +278,15 @@ function Fix({ project, ds, report: r, fixed, update, commit }: TabProps) {
     if (!fixed) return
     setBusy(true)
     const prev = ds
-    await commit({ rows: fixed.rows, parseErrors: [] }, `v${project.versions.length + 1} · fixed`, fixed.log.filter(l => l.count).map(l => `${FIX_LABEL[l.key][0]}: ${l.note}`).join('; ') || 'No changes')
+    await commit({ rows: fixed.rows, parseErrors: [] }, 'fixed', fixed.log.filter(l => l.count).map(l => `${FIX_LABEL[l.key][0]}: ${l.note}`).join('; ') || 'No changes')
     setBusy(false)
-    toast(`Applied fixes: ${fmtN(fixed.rows.length)} rows remain`, { tone: 'ok', undo: () => void commit(prev, `v${project.versions.length + 2} · undo fixes`, 'Restored the rows from before the fix-up') })
+    toast(`Applied fixes: ${fmtN(fixed.rows.length)} rows remain`, { tone: 'ok', undo: () => void commit(prev, 'undo fixes', 'Restored the rows from before the fix-up') })
   }
   const split = async () => {
     setBusy(true)
     const next = makeSplit(ds.rows, { evalFraction: project.evalFraction, seed: project.versions.length + 1, nearThreshold: project.opts.nearThreshold, labels: r.labels.source ? r.labels.perRow : undefined })
     const ev = next.filter(x => x.split === 'eval').length
-    await commit({ ...ds, rows: next }, `v${project.versions.length + 1} · split`, `Stratified split: ${fmtN(next.length - ev)} train / ${fmtN(ev)} eval`)
+    await commit({ ...ds, rows: next }, 'split', `Stratified split: ${fmtN(next.length - ev)} train / ${fmtN(ev)} eval`)
     setBusy(false)
     toast(`Split into ${fmtN(next.length - ev)} train and ${fmtN(ev)} eval rows`, { tone: 'ok' })
   }
@@ -371,8 +371,8 @@ function History({ project, ds, update, commit }: TabProps) {
     const v = vs.find(x => x.id === id)!
     if (!data) { toast('The rows for that version are on another device; only its summary synced.', { tone: 'error' }); return }
     const prev = ds
-    await commit(data, `v${vs.length + 1} · restored ${v.label.split(' ')[0]}`, `Restored ${v.label}`)
-    toast(`Restored ${v.label}`, { tone: 'ok', undo: () => void putData(project.id, prev) })
+    await commit(data, `restored ${v.label.split(' ')[0]}`, `Restored ${v.label}`)
+    toast(`Restored ${v.label}`, { tone: 'ok', undo: () => void commit(prev, 'undo restore', `Restored the rows from before ${v.label} was restored`) })
   }
   const exportV = async (id: string) => {
     const data = await getVersionData(project.id, id)
