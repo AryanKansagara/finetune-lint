@@ -11,7 +11,8 @@ function checkTurns(msgs: Msg[], line: number, out: Issue[], where = '') {
     if (m.weight !== undefined && m.weight !== 0 && m.weight !== 1) out.push({ line, turn: t, code: 'bad_weight', message: `Turn ${t}${where} has weight ${JSON.stringify(m.weight)}; weight must be 0 or 1.` })
     else if (m.weight !== undefined && m.role !== 'assistant') out.push({ line, turn: t, code: 'bad_weight', message: `Turn ${t}${where} is ${m.role || 'roleless'} but has a weight; only assistant turns take one.` })
     if (m.function_call && (typeof m.function_call.name !== 'string' || typeof m.function_call.arguments !== 'string')) out.push({ line, turn: t, code: 'tool_schema', message: `Turn ${t}${where}: function_call needs a string name and JSON-encoded string arguments.` })
-    if (!m.content.trim() && !m.tool_calls?.length && !m.function_call) out.push({ line, turn: t, code: 'empty_turn', message: `Turn ${t}${where} (${m.role || 'no role'}) is empty.` })
+    if (m.lostParts) out.push({ line, turn: t, code: 'content_part', message: `Turn ${t}${where} has ${m.lostParts.length > 1 ? 'parts' : 'a part'} of type ${m.lostParts.join(', ')}. Only text is read here, so this row is not exported.` })
+    else if (!m.content.trim() && !m.tool_calls?.length && !m.function_call) out.push({ line, turn: t, code: 'empty_turn', message: `Turn ${t}${where} (${m.role || 'no role'}) is empty.` })
     if (m.role === 'system' && i > 0) out.push({ line, turn: t, code: 'system_not_first', message: `System prompt at turn ${t}${where}; most chat templates only accept it first.` })
     if (i > 0 && m.role === msgs[i - 1].role && m.role !== 'tool' && STD.has(m.role)) out.push({ line, turn: t, code: 'consecutive_roles', message: `Turns ${t - 1} and ${t}${where} are both ${m.role}.` })
     for (const [k, c] of (m.tool_calls ?? []).entries()) {
@@ -38,7 +39,7 @@ export function validateRow(r: Row): Issue[] {
     checkTurns(r.messages, line, out, ' of the prompt')
     if (!r.messages.some(m => m.role === 'user')) out.push({ line, code: 'no_user', message: 'The prompt has no user turn.' })
     for (const [k, side] of [['chosen', r.chosen], ['rejected', r.rejected]] as const) {
-      if (!side?.length || side.every(m => !m.content.trim() && !m.tool_calls?.length)) out.push({ line, code: 'dpo_missing', message: `The ${k} response is missing or empty.` })
+      if (!side?.length || side.every(m => !m.content.trim() && !m.tool_calls?.length && !m.lostParts)) out.push({ line, code: 'dpo_missing', message: `The ${k} response is missing or empty.` })
       else {
         checkTurns(side, line, out, ` of ${k}`)
         if (side.at(-1)!.role !== 'assistant') out.push({ line, code: 'no_assistant_final', message: `The ${k} response does not end on an assistant turn.` })
@@ -57,4 +58,4 @@ export function validateRow(r: Row): Issue[] {
 }
 
 /** Rows with an error-severity structural problem; fine-tuning services reject these. */
-export const BLOCKING = new Set(['bad_role', 'empty_turn', 'no_user', 'no_assistant_final', 'tool_schema', 'dpo_missing', 'empty_conversation', 'bad_weight'])
+export const BLOCKING = new Set(['bad_role', 'empty_turn', 'no_user', 'no_assistant_final', 'tool_schema', 'dpo_missing', 'empty_conversation', 'bad_weight', 'content_part'])

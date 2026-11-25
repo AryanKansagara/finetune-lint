@@ -1,6 +1,6 @@
 export interface ToolCall { id?: unknown; type?: unknown; function?: { name?: unknown; arguments?: unknown } }
 /** `weight` (0 or 1) is OpenAI's per-turn training mask; `function_call` is the legacy single-call form. Both are kept for export. */
-export interface Msg { role: string; content: string; tool_calls?: ToolCall[]; tool_call_id?: string; name?: string; weight?: unknown; function_call?: { name?: unknown; arguments?: unknown } }
+export interface Msg { role: string; content: string; tool_calls?: ToolCall[]; tool_call_id?: string; name?: string; weight?: unknown; function_call?: { name?: unknown; arguments?: unknown }; /** Types of the content parts that are not text (image_url, input_audio...) and were not kept */ lostParts?: string[] }
 
 export type Format = 'openai' | 'sharegpt' | 'alpaca' | 'dpo'
 export const FORMAT_LABEL: Record<Format, string> = {
@@ -38,6 +38,7 @@ export const ISSUES = {
   empty_conversation: { sev: 'error', label: 'No turns' },
   bad_role: { sev: 'error', label: 'Unknown role' },
   empty_turn: { sev: 'error', label: 'Empty turn' },
+  content_part: { sev: 'error', label: 'Image, audio or other non-text part' },
   no_user: { sev: 'error', label: 'No user turn' },
   no_assistant_final: { sev: 'error', label: 'Does not end on an assistant turn' },
   tool_schema: { sev: 'error', label: 'Tool-call schema' },
