@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { Report } from './engine/analyze.ts'
 import { makeVersion, runJob, useFixed, useProject, useReport, type Fixed } from './projectData.ts'
 import { getProject, putData, type Dataset, type Project } from './store.ts'
@@ -17,8 +17,11 @@ export interface TabProps {
   fixed: Fixed | null
   update(p: Partial<Project>): void
   /** Replaces the working dataset and records a version; `label` is what it is called after its number */
-  commit(ds: Dataset, label: string, note: string, patch?: Partial<Project>): Promise<void>
+  commit: Commit
 }
+
+/** The rows and project fields may be functions of the current ones: commits run one after the other, so two started together must not build on the same rows. */
+export type Commit = (next: Dataset | ((cur: Dataset) => Dataset), label: string, note: string, patch?: Partial<Project> | ((cur: Project) => Partial<Project>)) => Promise<void>
 
 export default function ProjectView({ id, tab: rawTab }: { id: string; tab: string }) {
   const { loading, project, ds, setDs, update } = useProject(id)
@@ -31,8 +34,17 @@ export default function ProjectView({ id, tab: rawTab }: { id: string; tab: stri
 
   const setTab = (t: Tab) => go(`/app/p/${id}${t === 'overview' ? '' : '/' + t}`, { keepScroll: true })
 
-  const commit = async (next: Dataset, label: string, note: string, patch: Partial<Project> = {}) => {
+  const latest = useRef(ds)
+  latest.current = ds
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  const commit: Commit = (...a) => {
+    const run = queue.current.then(() => commitNow(...a))
+    queue.current = run.catch(() => {})
+    return run
+  }
+  const commitNow = async (nextOf: Parameters<Commit>[0], label: string, note: string, patch: Parameters<Commit>[3] = {}) => {
     if (!project) return
+    const next = typeof nextOf === 'function' ? nextOf(latest.current ?? { rows: [], parseErrors: [] }) : nextOf
     const r = await runJob<Report>({ kind: 'analyze', rows: next.rows, opts: project.opts, parseErrors: next.parseErrors })
     // An undo runs long after the render it was made in, so the versions are read from the store, not from `project`.
     const cur = getProject(project.id)
@@ -41,7 +53,8 @@ export default function ProjectView({ id, tab: rawTab }: { id: string; tab: stri
     const v = await makeVersion(project.id, next, r, `v${n} · ${label}`, note)
     await putData(project.id, next)
     setDs(next)
-    await update({ ...patch, versions: [...cur.versions, v], dataMissing: false })
+    latest.current = next
+    await update({ ...(typeof patch === 'function' ? patch(cur) : patch), versions: [...cur.versions, v], dataMissing: false })
   }
 
   const saveVersion = async () => {
