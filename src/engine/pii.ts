@@ -1,5 +1,6 @@
 // Finds and strips personal data over everything a row exports: all turns (system prompts too), call arguments,
 // the label and kept fields. Scanning and stripping walk the row with the same function, so they cannot disagree.
+import { pickLabel } from './formats.ts'
 import { PLACEHOLDER, scanPii, type PiiHit } from './content.ts'
 import type { Msg, Row } from './types.ts'
 
@@ -39,8 +40,9 @@ function visitRow(r: Row, f: Visit): Row {
   const out: Row = { ...r, messages: r.messages.map(m => visitMsg(m, f)) }
   if (r.chosen) out.chosen = r.chosen.map(m => visitMsg(m, f))
   if (r.rejected) out.rejected = r.rejected.map(m => visitMsg(m, f))
-  if (r.label !== undefined) out.label = f(r.label)
   if (r.extra) out.extra = visitDeep(r.extra, f) as Record<string, unknown>
+  // The label is a copy of a kept field, which has just been visited; rows stored by earlier versions have no such field.
+  if (r.label !== undefined) out.label = pickLabel(r.extra ?? {}) === r.label ? pickLabel(out.extra!) : f(r.label)
   return out
 }
 
