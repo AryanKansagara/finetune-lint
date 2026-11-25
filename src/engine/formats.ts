@@ -221,6 +221,12 @@ export function csvToRecords(csv: Csv, map: CsvMapping): { records: { obj: unkno
   return { records, errors }
 }
 
+/** One CSV cell as text: quoted when it has to be, and never read as a formula by a spreadsheet. */
+export const csvCell = (v: string) => {
+  const t = /^\s*[=+\-@]/.test(v) || /^[\t\r\n]/.test(v) ? "'" + v : v
+  return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
+}
+
 // ---------- File names ----------
 
 const TRAIN_WORD = /^train(?:ing)?(?:set|data|split)?$/i
