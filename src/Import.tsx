@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_OPTIONS, FIREWORKS_TRAIN_PRICES, PRICES_AS_OF, type Options } from './engine/analyze.ts'
-import { csvToRecords, guessCsvMapping, parseRecords, parseText, type CsvMapping, type CsvRole } from './engine/formats.ts'
+import { csvToRecords, guessCsvMapping, guessSplit, parseRecords, parseText, type CsvMapping, type CsvRole } from './engine/formats.ts'
 import { sampleFiles } from './engine/sample.ts'
 import { FORMAT_LABEL, type Format, type Issue, type Row } from './engine/types.ts'
 import { validateRow } from './engine/validate.ts'
@@ -47,7 +47,7 @@ export default function DataTab({ project, ds, update, commit }: { project: Proj
       if (!text.trim()) { toast(`${f.name} is empty.`, { tone: 'error' }); continue }
       const head = text.trimStart()
       const kind = head.startsWith('[') && /\.json$/i.test(f.name) ? 'json' : head.startsWith('{') || head.startsWith('[') ? 'jsonl' : 'csv'
-      const split = /(eval|valid|val|test|dev)[^/]*$/i.test(f.name) ? 'eval' : 'train'
+      const split = guessSplit(f.name)
       const p: Pending = { id: uuid(), name: f.name, text, kind, split }
       if (kind === 'csv') { const csv = parseText(text); p.header = csv.csv?.rows[0] ?? []; p.map = guessCsvMapping(p.header) }
       next.push(p)
@@ -100,7 +100,7 @@ export default function DataTab({ project, ds, update, commit }: { project: Proj
           onDragOver={e => { e.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)}
           onDrop={e => { e.preventDefault(); setDrag(false); void readFiles(e.dataTransfer.files) }}>
           <h3>{busy ? 'Reading files' : 'Drop train or eval files here, or click to choose'}</h3>
-          <p className="muted small" style={{ margin: 0 }}>Parsed in your browser; nothing is uploaded. Files named *eval*, *valid* or *test* are marked as eval.</p>
+          <p className="muted small" style={{ margin: 0 }}>Parsed in your browser; nothing is uploaded. Files with eval, validation, val, test or dev as a word in their name are marked as eval.</p>
           <input ref={input} type="file" accept=".jsonl,.json,.csv,.tsv,.txt,.ndjson" multiple hidden onChange={e => { if (e.target.files) void readFiles(e.target.files); e.target.value = '' }} />
         </div>
       </div>
