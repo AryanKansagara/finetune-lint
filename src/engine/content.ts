@@ -56,6 +56,50 @@ function groupedCards(text: string, free: (s: number, e: number) => boolean): { 
 const SSN = /\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b/g
 const PHONE = /(?:(?<![\w])\+\d{1,3}[\s.-]?)?(?:\(\d{2,4}\)[\s.-]?|\b\d{2,4}[\s.-])\d{3,4}[\s.-]?\d{3,4}\b/g
 
+const isPhone = (v: string) => { const d = v.replace(/\D/g, ''); return d.length >= 10 && d.length <= 15 && !/^(19|20)\d{2}[-./]\d{2}[-./]\d{2}$/.test(v.trim()) }
+const INTL_GROUP = /(?:[ .\-  ‐-–]|[ .\-  ]?[()][ .\-  ]?)?\d+/y
+const DATE = /(?<!\d)(?:(?:19|20)\d\d[-./](?:0[1-9]|1[0-2])[-./](?:0[1-9]|[12]\d|3[01])|(?:0[1-9]|[12]\d|3[01])[-./](?:0[1-9]|[12]\d|3[01])[-./](?:19|20)\d\d)(?!\d)/
+
+/** International numbers: a + and 10 to 15 digits in any grouping, read group by group so that a count after the number is left out. */
+function intlPhones(text: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = []
+  for (const m of text.matchAll(/(?<!\w)\+(?=\(?[1-9])/g)) {
+    const groups: { end: number; digits: number }[] = []
+    let at = m.index! + 1, digits = 0
+    while (digits < 15) {
+      INTL_GROUP.lastIndex = at
+      const g = INTL_GROUP.exec(text)
+      if (!g) break
+      const n = g[0].replace(/\D/g, '').length, sep = g[0].length - n
+      if (digits + n > 15) break
+      // Enough digits already: only a short group after a single space or mark still belongs to the number.
+      if (digits >= 10 && (n < 2 || n > 4 || sep > 1 || groups.at(-1)!.digits >= 6)) break
+      digits += n; at += g[0].length
+      groups.push({ end: at, digits: n })
+    }
+    // North American and Russian numbers always have 11 digits.
+    let sum = 0
+    const fixed = /[17]/.test(text[m.index! + 1]) ? groups.find(g => (sum += g.digits) === 11) : undefined
+    const end = (fixed ?? groups.at(-1))?.end ?? 0
+    const v = text.slice(m.index!, end)
+    // Dates, and signed decimals (+3.1415926535), are not numbers to call; nor is a piece of a longer run of digits.
+    if (digits >= 10 && !/\d/.test(text[end] ?? '') && !DATE.test(v) && !/^\+\d+\.\d+$/.test(v)) out.push({ start: m.index!, end })
+  }
+  return out
+}
+
+/** Looks up the hits that overlap a range. Ranges must be asked for in ascending order, so a long text is read once. */
+function sweep(hits: PiiHit[]) {
+  const sorted = [...hits].sort((a, b) => a.start - b.start)
+  let k = 0
+  return (s: number, e: number) => {
+    while (k < sorted.length && sorted[k].end <= s) k++
+    const out: PiiHit[] = []
+    for (let i = k; i < sorted.length && sorted[i].start < e; i++) out.push(sorted[i])
+    return out
+  }
+}
+
 /** Non-overlapping PII hits, most specific first (a card number is not also reported as a phone number). */
 export function scanPii(text: string): PiiHit[] {
   const hits: PiiHit[] = []
@@ -77,9 +121,29 @@ export function scanPii(text: string): PiiHit[] {
     if (!h) { hits.push({ type: 'card', ...c, value: text.slice(c.start, c.end) }); continue }
     h.start = Math.min(h.start, c.start); h.end = Math.max(h.end, c.end); h.value = text.slice(h.start, h.end)
   }
+  // A + marks a phone number even when its digits happen to pass Luhn; a card that reaches further stays a card.
+  let over = sweep(hits)
+  for (const p of intlPhones(text)) {
+    const os = over(p.start, p.end)
+    if (os.some(h => h.type !== 'card' || h.start < p.start || h.end > p.end)) continue
+    for (const h of os) hits.splice(hits.indexOf(h), 1)
+    hits.push({ type: 'phone', ...p, value: text.slice(p.start, p.end) })
+  }
   // Long digit runs that fail Luhn (order or tracking numbers) are not phone numbers either.
-  for (const m of text.matchAll(CARD)) if (free(m.index!, m.index! + m[0].length)) hits.push({ type: 'phone', start: m.index!, end: m.index! + m[0].length, value: '' })
-  add('phone', PHONE, v => { const d = v.replace(/\D/g, ''); return d.length >= 10 && d.length <= 15 && !/^(19|20)\d{2}[-./]\d{2}[-./]\d{2}$/.test(v.trim()) })
+  over = sweep(hits)
+  for (const m of text.matchAll(CARD)) if (!over(m.index!, m.index! + m[0].length).length) hits.push({ type: 'phone', start: m.index!, end: m.index! + m[0].length, value: '' })
+  // Where a plain reading reaches further than the international one, both are masked.
+  over = sweep(hits)
+  for (const m of text.matchAll(PHONE)) {
+    if (!isPhone(m[0])) continue
+    const s = m.index!, e = s + m[0].length, os = over(s, e)
+    if (os.some(h => h.type !== 'phone' || !h.value)) continue
+    const start = Math.min(s, ...os.map(h => h.start)), end = Math.max(e, ...os.map(h => h.end))
+    const [first, ...rest] = os
+    if (!first) { hits.push({ type: 'phone', start, end, value: text.slice(start, end) }); continue }
+    Object.assign(first, { start, end, value: text.slice(start, end) })
+    for (const h of rest) if (hits.includes(h)) hits.splice(hits.indexOf(h), 1)
+  }
   return hits.filter(h => h.value).sort((a, b) => a.start - b.start)
 }
 
