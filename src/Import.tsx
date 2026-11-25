@@ -143,7 +143,7 @@ function PendingFile({ p, hasData, onChange, onCancel, onAdd }: { p: Pending; ha
       <h3 style={{ fontSize: 15 }}>Validation report {lines.length ? <span className="muted small">({fmtN(lines.length)} findings{lines.length > 300 ? ', first 300 shown' : ''})</span> : <span className="good-text small">no structural problems</span>}</h3>
       {lines.length > 0 && (
         <div className="issues" role="list">
-          {lines.slice(0, 300).map((x, i) => <div key={i} role="listitem" className={x.code === 'invalid_json' || x.code === 'unknown_shape' ? 'error-row' : ''}><span className="ln">line {x.line}</span><span>{x.message}</span></div>)}
+          {lines.slice(0, 300).map((x, i) => <div key={i} role="listitem" className={x.code === 'invalid_json' || x.code === 'bad_csv' || x.code === 'unknown_shape' ? 'error-row' : ''}><span className="ln">line {x.line}</span><span>{x.message}</span></div>)}
         </div>
       )}
       <div className="row between wrap gap" style={{ marginTop: 14 }}>

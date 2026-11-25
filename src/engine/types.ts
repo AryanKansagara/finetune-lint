@@ -33,6 +33,7 @@ export interface Issue { line: number; code: IssueCode; message: string; turn?: 
 
 export const ISSUES = {
   invalid_json: { sev: 'error', label: 'Invalid JSON' },
+  bad_csv: { sev: 'error', label: 'Malformed CSV' },
   unknown_shape: { sev: 'error', label: 'Unrecognised record shape' },
   empty_conversation: { sev: 'error', label: 'No turns' },
   bad_role: { sev: 'error', label: 'Unknown role' },
