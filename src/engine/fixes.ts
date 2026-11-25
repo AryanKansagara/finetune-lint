@@ -174,18 +174,31 @@ export function makeSplit(rows: Row[], o: SplitOptions): Row[] {
   for (const c of clusters) { const k = stratum(c[0]); const l = by.get(k); if (l) l.push(c); else by.set(k, [c]) }
   const rand = rng(o.seed)
   const split: ('train' | 'eval')[] = rows.map(() => 'train')
-  for (const cs of by.values()) {
+  const total = Math.round(rows.length * o.evalFraction)
+  let taken = 0
+  const strata = [...by.values()].map(cs => {
     for (let i = cs.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [cs[i], cs[j]] = [cs[j], cs[i]] }
-    const size = cs.reduce((s, c) => s + c.length, 0)
-    const want = Math.round(size * o.evalFraction)
-    let got = 0
+    const size = cs.reduce((s, c) => s + c.length, 0), want = Math.floor(size * o.evalFraction)
     // Singletons first fill the eval quota, so big clusters of paraphrases stay in train.
-    for (const c of [...cs].sort((a, b) => a.length - b.length)) {
-      if (got >= want) break
-      if (got + c.length > want + 1) continue
-      for (const i of c) split[i] = 'eval'
-      got += c.length
-    }
+    return { left: [...cs].sort((a, b) => a.length - b.length), size, share: size * o.evalFraction, want, got: 0 }
+  })
+  // Largest remainder: each stratum gets the whole part of its share, and the rows left over go to the biggest fractions,
+  // before that to strata that keep a row in train.
+  const spare = total - strata.reduce((s, t) => s + t.want, 0)
+  for (const t of [...strata].sort((a, b) => Number(a.size < 2) - Number(b.size < 2) || (b.share - b.want) - (a.share - a.want)).slice(0, Math.max(0, spare))) t.want++
+  type Stratum = (typeof strata)[number]
+  const take = (t: Stratum, k: number) => {
+    const [c] = t.left.splice(k, 1)
+    for (const i of c) split[i] = 'eval'
+    t.got += c.length; taken += c.length
+  }
+  for (const t of strata) for (let k = 0; k < t.left.length && t.got < t.want;) { if (t.got + t.left[k].length <= t.want) take(t, k); else k++ }
+  // Where the clusters of a stratum do not fit its quota, the rows are made up elsewhere: first without passing the total, then by at most one row.
+  for (const over of [0, 1]) while (taken < total) {
+    const next = strata.filter(t => t.left.length && taken + t.left[0].length <= total + over)
+      .sort((a, b) => Number(a.left.length < 2) - Number(b.left.length < 2) || (b.want - b.got) - (a.want - a.got))[0]
+    if (!next) break
+    take(next, 0)
   }
   // Clusters come from sampled candidate pairs; whatever the leak check still finds goes back to train with its cluster.
   const clusterOf = new Map(clusters.flatMap(c => c.map(i => [i, c] as const)))
