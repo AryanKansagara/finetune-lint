@@ -374,10 +374,12 @@ function History({ project, ds, update, commit }: TabProps) {
     await commit(data, `restored ${v.label.split(' ')[0]}`, `Restored ${v.label}`)
     toast(`Restored ${v.label}`, { tone: 'ok', undo: () => void commit(prev, 'undo restore', `Restored the rows from before ${v.label} was restored`) })
   }
-  const exportV = async (id: string) => {
+  const exportV = async (id: string, side: 'train' | 'eval') => {
     const data = await getVersionData(project.id, id)
     if (!data) { toast('The rows for that version are on another device.', { tone: 'error' }); return }
-    download(`${project.name.replace(/\W+/g, '-')}-${vs.find(v => v.id === id)!.label.split(' ')[0]}.jsonl`, toJsonl(data.rows, project.target).text, 'application/jsonl')
+    const { text, written, skipped } = toJsonl(data.rows.filter(r => (r.split === 'eval') === (side === 'eval')), project.target)
+    if (written) download(`${project.name.replace(/\W+/g, '-')}-${vs.find(v => v.id === id)!.label.split(' ')[0]}-${side}.jsonl`, text, 'application/jsonl')
+    if (skipped.length) toast(`${written ? `${fmtN(written)} ${side} rows written; ` : 'Nothing written: '}${fmtN(skipped.length)} cannot be written in this format (${[...new Set(skipped.map(x => x.reason))].join('; ')}).`, { tone: 'error', ttl: 9000 })
   }
   const remove = async (id: string) => {
     const v = vs.find(x => x.id === id)!
@@ -425,7 +427,7 @@ function History({ project, ds, update, commit }: TabProps) {
               </div>
               <div className="row gap-sm wrap">
                 {i > 0 && <button type="button" className="btn ghost sm" onClick={() => void restore(v.id)}>Restore</button>}
-                <button type="button" className="btn ghost sm" onClick={() => void exportV(v.id)}>JSONL</button>
+                {(['train', 'eval'] as const).map(side => v.summary[side] > 0 && <button key={side} type="button" className="btn ghost sm" onClick={() => void exportV(v.id, side)}>{side === 'train' ? 'Train' : 'Eval'} JSONL</button>)}
                 {vs.length > 1 && <button type="button" className="btn danger-ghost sm" onClick={() => void remove(v.id)}>Delete</button>}
               </div>
             </li>
