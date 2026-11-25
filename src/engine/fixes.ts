@@ -6,6 +6,7 @@ import { msgTokens, rowTokens, PER_EXAMPLE } from './tokens.ts'
 import type { Msg, Row } from './types.ts'
 import { BLOCKING, validateRow } from './validate.ts'
 import { isRefusal } from './content.ts'
+import { leakPromptKey } from './dedupe.ts'
 
 export interface FixSet {
   normaliseRoles: boolean
@@ -142,12 +143,21 @@ export function rng(seed: number) {
 export interface SplitOptions { evalFraction: number; seed: number; nearThreshold: number; labels?: (string | null)[] }
 
 /**
- * Stratified train/eval split. Near-duplicate clusters move as one unit so no eval row has a twin in train.
+ * Stratified train/eval split. Rows that share a prompt and near-duplicate clusters move as one unit, and the result
+ * is run through the leak check, so no eval row has a twin in train.
  * Strata are the label (classification-style data) or a token-length quartile otherwise.
  */
 export function makeSplit(rows: Row[], o: SplitOptions): Row[] {
   const d = findDuplicates(rows.map(rowText), o.nearThreshold)
-  const clusters = groups(rows.length, [...d.exact.flatMap(g => g.slice(1).map(i => [g[0], i] as [number, number])), ...d.pairs.map(p => [p.a, p.b] as [number, number])])
+  const byPrompt = new Map<string, number>()
+  const samePrompt = rows.flatMap((r, i): [number, number][] => {
+    const k = leakPromptKey(r)
+    if (k === null) return []
+    if (byPrompt.has(k)) return [[byPrompt.get(k)!, i]]
+    byPrompt.set(k, i)
+    return []
+  })
+  const clusters = groups(rows.length, [...samePrompt, ...d.exact.flatMap(g => g.slice(1).map(i => [g[0], i] as [number, number])), ...d.pairs.map(p => [p.a, p.b] as [number, number])])
   const len = rows.map(r => rowTokens(r).total)
   const sorted = [...len].sort((a, b) => a - b)
   const q = [0.25, 0.5, 0.75].map(p => sorted[Math.floor(p * sorted.length)] ?? 0)
@@ -168,6 +178,14 @@ export function makeSplit(rows: Row[], o: SplitOptions): Row[] {
       for (const i of c) split[i] = 'eval'
       got += c.length
     }
+  }
+  // Clusters come from sampled candidate pairs; whatever the leak check still finds goes back to train with its cluster.
+  const clusterOf = new Map(clusters.flatMap(c => c.map(i => [i, c] as const)))
+  for (;;) {
+    const side = (s: 'train' | 'eval') => rows.map((_, i) => i).filter(i => split[i] === s)
+    const leaks = findLeaks(rows, side('train'), side('eval'), d.sigs, o.nearThreshold)
+    if (!leaks.length) break
+    for (const l of leaks) for (const i of clusterOf.get(l.evalIdx)!) split[i] = 'train'
   }
   return rows.map((r, i) => ({ ...r, split: split[i] }))
 }
