@@ -1,7 +1,7 @@
 import { exported, importFile, jsonl, newDataset, records, tab } from '../helpers.ts'
 import { expect, test } from '../fixtures.ts'
 
-test.fail('#9 normalising roles keeps per-turn weights and function calls', async ({ page }) => {
+test('#9 normalising roles keeps per-turn weights and function calls', async ({ page }) => {
   const turns = [{ role: 'user', content: 'Where is it?' }, { role: 'assistant', content: 'No idea.', weight: 0 }, { role: 'assistant', content: 'It is at the depot.', weight: 1 }]
   const call = [{ role: 'user', content: 'Find it' }, { role: 'assistant', content: 'Looking.' }, { role: 'assistant', content: '', function_call: { name: 'find', arguments: '{}' } }]
   await newDataset(page)
