@@ -221,6 +221,17 @@ export function csvToRecords(csv: Csv, map: CsvMapping): { records: { obj: unkno
   return { records, errors }
 }
 
+// ---------- File names ----------
+
+const TRAIN_WORD = /^train(?:ing)?(?:set|data|split)?$/i
+const EVAL_WORD = /^(?:eval(?:s|uation|uations)?|valid(?:ation)?|val|tests?|testing|dev)(?:set|data|split)?$/i
+
+/** Whether a file name says evaluation data. Only whole words count ("support_eval.jsonl", "evalSet2.csv"; not "retrieval"), and a name that says train is train. */
+export function guessSplit(name: string): 'train' | 'eval' {
+  const words = name.replace(/(\p{Ll})(?=\p{Lu})|(\p{Lu})(?=\p{Lu}\p{Ll})/gu, '$1$2 ').split(/[^\p{L}\p{M}]+/u)
+  return !words.some(w => TRAIN_WORD.test(w)) && words.some(w => EVAL_WORD.test(w)) ? 'eval' : 'train'
+}
+
 // ---------- Whole-file parse ----------
 
 export interface Parsed { rows: Row[]; errors: Issue[]; formats: Partial<Record<Format, number>>; kind: 'jsonl' | 'json' | 'csv'; csv?: Csv }
