@@ -31,6 +31,26 @@ const SECRET = [
 ]
 const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g
 const CARD = /\b\d(?:[ -]?\d){12,18}\b/g
+const DIGIT_RUN = /\b\d+(?:[ -]\d+)+\b/g
+/** Group lengths a card number is written in: one block, 4-4-4-4 (plus up to 3 more digits), 4-6-5 and 4-6-4. */
+const CARD_GROUPS = /^(?:1[3-9]|4-4-4-4(?:-[1-3])?|4-6-[45])$/
+const isCard = (v: string) => { const d = v.replace(/\D/g, ''); return d.length >= 13 && d.length <= 19 && luhn(d) }
+
+/** Card numbers written next to other digits ("4111 1111 1111 1111 12/27"), read group by group. */
+function groupedCards(text: string, free: (s: number, e: number) => boolean): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = []
+  for (const m of text.matchAll(DIGIT_RUN)) {
+    const gs = [...m[0].matchAll(/\d+/g)].map(g => ({ start: m.index! + g.index!, end: m.index! + g.index! + g[0].length }))
+    for (let i = 0; i < gs.length; i++) for (let n = Math.min(5, gs.length - i); n > 0; n--) {
+      const w = gs.slice(i, i + n), start = w[0].start, end = w[n - 1].end
+      if (!CARD_GROUPS.test(w.map(g => g.end - g.start).join('-')) || !isCard(text.slice(start, end)) || !free(start, end)) continue
+      out.push({ start, end })
+      break
+    }
+  }
+  return out
+}
+
 const SSN = /\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b/g
 const PHONE = /(?:(?<![\w])\+\d{1,3}[\s.-]?)?(?:\(\d{2,4}\)[\s.-]?|\b\d{2,4}[\s.-])\d{3,4}[\s.-]?\d{3,4}\b/g
 
@@ -46,8 +66,15 @@ export function scanPii(text: string): PiiHit[] {
   }
   for (const re of SECRET) add('secret', re)
   add('email', EMAIL)
-  add('card', CARD, v => { const d = v.replace(/\D/g, ''); return d.length >= 13 && d.length <= 19 && luhn(d) })
+  add('card', CARD, isCard)
   add('ssn', SSN)
+  // Overlapping card readings are joined, so no digit of the real one is left out.
+  const notCard = hits.filter(h => h.type !== 'card')
+  for (const c of groupedCards(text, (s, e) => !notCard.some(h => s < h.end && e > h.start))) {
+    const h = hits.find(h => h.type === 'card' && c.start < h.end && c.end > h.start)
+    if (!h) { hits.push({ type: 'card', ...c, value: text.slice(c.start, c.end) }); continue }
+    h.start = Math.min(h.start, c.start); h.end = Math.max(h.end, c.end); h.value = text.slice(h.start, h.end)
+  }
   // Long digit runs that fail Luhn (order or tracking numbers) are not phone numbers either.
   for (const m of text.matchAll(CARD)) if (free(m.index!, m.index! + m[0].length)) hits.push({ type: 'phone', start: m.index!, end: m.index! + m[0].length, value: '' })
   add('phone', PHONE, v => { const d = v.replace(/\D/g, ''); return d.length >= 10 && d.length <= 15 && !/^(19|20)\d{2}[-./]\d{2}[-./]\d{2}$/.test(v.trim()) })

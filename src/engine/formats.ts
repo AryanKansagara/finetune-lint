@@ -77,7 +77,15 @@ export function normalise(o: unknown, line: number): Row | null {
   if ('chosen' in o || 'rejected' in o) {
     // Prompt key varies: prompt (TRL, UltraFeedback), question (Intel orca_dpo_pairs), input/instruction (distilabel, Alpaca-style DPO).
     const pk = ['prompt', 'question', 'input', 'instruction'].find(k => typeof o[k] === 'string' || Array.isArray(o[k]))
-    const prompt = pk ? turns(o[pk], 'user') : Array.isArray(o.messages) ? o.messages.map(toMsg) : []
+    let source = pk ? o[pk] : undefined, promptKeys = [pk ?? 'prompt']
+    // Alpaca-style pairs (and CSV) put the task in one field and its input in another; both belong in the user turn, as in SFT rows.
+    const tasks = ['prompt', 'question', 'instruction'].filter(k => typeof o[k] === 'string' && o[k].trim())
+    if (tasks.length === 1 && typeof source === 'string' && typeof o.input === 'string') {
+      const task = o[tasks[0]] as string, input = o.input.trim()
+      const joined = !input || task.trim() === input || task.includes('\n' + input) ? task : splitTranscript(task) || splitTranscript(o.input) ? null : task + '\n\n' + o.input
+      if (joined !== null) { source = joined; promptKeys = [tasks[0], 'input'] }
+    }
+    const prompt = pk ? turns(source, 'user') : Array.isArray(o.messages) ? o.messages.map(toMsg) : []
     if ('system' in o && typeof o.system === 'string' && o.system) prompt.unshift({ role: 'system', content: o.system })
     let chosen = turns(o.chosen, 'assistant'), rejected = turns(o.rejected, 'assistant')
     const same = (a: Msg, b: Msg) => a.role === b.role && a.content.trim() === b.content.trim()
@@ -91,7 +99,7 @@ export function normalise(o: unknown, line: number): Row | null {
       while (k < chosen.length - 1 && k < rejected.length - 1 && same(chosen[k], rejected[k])) k++
       prompt.push(...chosen.slice(0, k)); chosen = chosen.slice(k); rejected = rejected.slice(k)
     }
-    return { line, format: 'dpo', messages: prompt, chosen, rejected, label, extra: extras(o, [pk ?? 'prompt', 'messages', 'chosen', 'rejected', 'system', ...LABEL_KEYS]) }
+    return { line, format: 'dpo', messages: prompt, chosen, rejected, label, extra: extras(o, [...promptKeys, 'messages', 'chosen', 'rejected', 'system', ...LABEL_KEYS]) }
   }
   if (Array.isArray(o.messages)) return { line, format: 'openai', messages: o.messages.map(toMsg), label, extra: extras(o, ['messages', ...LABEL_KEYS]) }
   if (Array.isArray(o.conversations)) {
@@ -114,28 +122,36 @@ export function normalise(o: unknown, line: number): Row | null {
 
 // ---------- CSV ----------
 
+/** `openQuote`: start line of a last record whose quoted field never closes; it has swallowed the rest of the file. `badQuotes`: start lines of records with text after a closing quote. */
+export interface Csv { rows: string[][]; lines: number[]; openQuote?: number; badQuotes?: Set<number> }
+
 /** RFC 4180 CSV with quoted fields and embedded newlines. Returns rows and the source line each starts on. */
-export function parseCsv(text: string): { rows: string[][]; lines: number[] } {
+export function parseCsv(text: string): Csv {
   const rows: string[][] = [], lines: number[] = []
   const delim = (text.split('\n', 1)[0].match(/\t/g)?.length ?? 0) > (text.split('\n', 1)[0].match(/,/g)?.length ?? 0) ? '\t' : ','
-  let row: string[] = [], field = '', q = false, line = 1, start = 1
+  let row: string[] = [], field = '', q = false, closed = false, line = 1, start = 1
+  const badQuotes = new Set<number>()
   for (let i = 0; i < text.length; i++) {
     const c = text[i]
     if (q) {
-      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++ } else q = false }
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++ } else { q = false; closed = true } }
       else { if (c === '\n') line++; field += c }
-    } else if (c === '"' && field === '') q = true
-    else if (c === delim) { row.push(field); field = '' }
+    } else if (c === '"' && field === '' && !closed) q = true
+    else if (c === delim) { row.push(field); field = ''; closed = false }
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && text[i + 1] === '\n') i++
-      row.push(field); field = ''
+      row.push(field); field = ''; closed = false
       if (row.some(f => f !== '')) { rows.push(row); lines.push(start) }
       row = []; line++; start = line
-    } else field += c
+    } else {
+      if (closed && c.trim()) badQuotes.add(start)
+      field += c
+    }
   }
   row.push(field)
+  if (q) return { rows, lines, badQuotes, openQuote: start }
   if (row.some(f => f !== '')) { rows.push(row); lines.push(start) }
-  return { rows, lines }
+  return { rows, lines, badQuotes }
 }
 
 export type CsvRole = 'system' | 'user' | 'input' | 'assistant' | 'chosen' | 'rejected' | 'label' | 'messages' | 'ignore'
@@ -152,11 +168,14 @@ const CSV_GUESS: [RegExp, CsvRole][] = [
 ]
 export const guessCsvMapping = (header: string[]): CsvMapping => header.map(h => CSV_GUESS.find(([re]) => re.test(h.trim()))?.[1] ?? 'ignore')
 
-export function csvToRecords(csv: { rows: string[][]; lines: number[] }, map: CsvMapping): { records: { obj: unknown; line: number }[]; errors: Issue[] } {
+export function csvToRecords(csv: Csv, map: CsvMapping): { records: { obj: unknown; line: number }[]; errors: Issue[] } {
   const records: { obj: unknown; line: number }[] = [], errors: Issue[] = []
   const col = (r: CsvRole) => map.indexOf(r)
-  for (let i = 1; i < csv.rows.length; i++) {
+  for (let i = 0; i < csv.rows.length; i++) {
     const r = csv.rows[i], line = csv.lines[i]
+    if (csv.badQuotes?.has(line)) { errors.push({ line, code: 'bad_csv', message: 'There is text after a closing double quote in this record. Write quotes inside quoted text as "".' }); continue }
+    if (i === 0) continue
+    if (r.slice(csv.rows[0].length).some(f => f.trim())) { errors.push({ line, code: 'bad_csv', message: `This record has ${r.length} fields but the header has ${csv.rows[0].length}. Put double quotes around text that contains the separator.` }); continue }
     const get = (role: CsvRole) => { const c = col(role); return c >= 0 ? (r[c] ?? '') : undefined }
     const o: Obj = {}
     const m = get('messages')
@@ -171,12 +190,13 @@ export function csvToRecords(csv: { rows: string[][]; lines: number[] }, map: Cs
     if (get('label')) o.label = get('label')
     records.push({ obj: o, line })
   }
+  if (csv.openQuote !== undefined) errors.push({ line: csv.openQuote, code: 'bad_csv', message: 'A double quote in the record that starts here is never closed, so the rest of the file could not be read.' })
   return { records, errors }
 }
 
 // ---------- Whole-file parse ----------
 
-export interface Parsed { rows: Row[]; errors: Issue[]; formats: Partial<Record<Format, number>>; kind: 'jsonl' | 'json' | 'csv'; csv?: { rows: string[][]; lines: number[] } }
+export interface Parsed { rows: Row[]; errors: Issue[]; formats: Partial<Record<Format, number>>; kind: 'jsonl' | 'json' | 'csv'; csv?: Csv }
 
 export function parseRecords(records: { obj: unknown; line: number }[], errors: Issue[] = []): Pick<Parsed, 'rows' | 'errors' | 'formats'> {
   const rows: Row[] = [], formats: Partial<Record<Format, number>> = {}
