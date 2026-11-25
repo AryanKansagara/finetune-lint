@@ -270,8 +270,12 @@ export function convert(r: Row, target: Target): Obj | { skip: string } {
     return { ...rest, input, preferred_output: (r.chosen ?? []).map(plain), non_preferred_output: (r.rejected ?? []).map(plain) }
   }
   if (target === 'openai') return { ...keep, messages: r.messages.map(plain) }
+  const name = target === 'sharegpt' ? 'ShareGPT' : 'Alpaca'
+  if (r.messages.some(m => m.tool_calls?.length)) return { skip: `tool calls have no standard ${name} form` }
+  if (r.messages.some(m => m.function_call)) return { skip: `function calls have no standard ${name} form` }
+  // A weight of 1 (or none) is what every turn has there anyway.
+  if (r.messages.some(m => m.weight != null && m.weight !== 1)) return { skip: `turn weights other than 1 have no ${name} form` }
   if (target === 'sharegpt') {
-    if (r.messages.some(m => m.tool_calls?.length)) return { skip: 'tool calls have no standard ShareGPT form' }
     return { ...keep, conversations: r.messages.map(m => ({ from: SHARE_FROM[m.role] ?? m.role, value: m.content })) }
   }
   const sys = r.messages.filter(m => m.role === 'system')
