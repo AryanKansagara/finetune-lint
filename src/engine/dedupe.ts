@@ -136,20 +136,23 @@ export function findDuplicates(texts: string[], threshold = 0.8): DupResult {
   return { keys, exact, near, pairs, sigs }
 }
 
+/** Key under which two rows count as having the same prompt, or null when the prompt is too short to tell. */
+export const leakPromptKey = (r: Row) => { const p = promptText(r); return normText(p).length > 12 ? textKey(p) : null }
+
 /** Eval rows whose prompt matches a train prompt exactly, or whose full text is a near duplicate of a train row. */
 export function findLeaks(rows: Row[], train: number[], evalIdx: number[], sigs: Uint32Array[], threshold = 0.8): { evalIdx: number; trainIdx: number; kind: 'exact prompt' | 'near duplicate'; sim: number }[] {
   if (!train.length || !evalIdx.length) return []
   const out: { evalIdx: number; trainIdx: number; kind: 'exact prompt' | 'near duplicate'; sim: number }[] = []
   const tp = new Map<string, number>()
-  for (const i of train) { const k = textKey(promptText(rows[i])); if (!tp.has(k)) tp.set(k, i) }
+  for (const i of train) { const k = leakPromptKey(rows[i]); if (k !== null && !tp.has(k)) tp.set(k, i) }
   const buckets = new Map<string, number[]>()
   for (const i of train) {
     const s = sigs[i]
     for (const k of bandKeys(s)) { const l = buckets.get(k); if (l) l.push(i); else buckets.set(k, [i]) }
   }
   for (const e of evalIdx) {
-    const pk = textKey(promptText(rows[e]))
-    if (normText(promptText(rows[e])).length > 12 && tp.has(pk)) { out.push({ evalIdx: e, trainIdx: tp.get(pk)!, kind: 'exact prompt', sim: 1 }); continue }
+    const pk = leakPromptKey(rows[e])
+    if (pk !== null && tp.has(pk)) { out.push({ evalIdx: e, trainIdx: tp.get(pk)!, kind: 'exact prompt', sim: 1 }); continue }
     const s = sigs[e]
     let best = -1, bestSim = 0
     for (const k of bandKeys(s)) for (const t of buckets.get(k) ?? []) { const sim = estJaccard(s, sigs[t]); if (sim > bestSim) { bestSim = sim; best = t } }
