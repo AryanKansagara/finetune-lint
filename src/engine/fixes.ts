@@ -1,7 +1,7 @@
 // Fix-ups that turn a linted dataset into one you can upload, plus a leakage-free stratified split.
-import { redact } from './content.ts'
 import { findDuplicates, findLeaks, groups, rowText } from './dedupe.ts'
 import { normaliseRole } from './formats.ts'
+import { redactRow } from './pii.ts'
 import { msgTokens, rowTokens, PER_EXAMPLE } from './tokens.ts'
 import type { Msg, Row } from './types.ts'
 import { BLOCKING, validateRow } from './validate.ts'
@@ -44,8 +44,6 @@ function normaliseTurns(ms: Msg[]): Msg[] {
   return out
 }
 
-const redactTurns = (ms: Msg[] | undefined, n: { v: number }) => ms?.map(m => { const r = redact(m.content); n.v += r.hits.length; return r.hits.length ? { ...m, content: r.text } : m })
-
 /** Drops whole middle exchanges until the row fits; keeps system prompt, first user turn and the final exchange. */
 export function trimRow(r: Row, ctx: number): Row | null {
   if (rowTokens(r).total <= ctx) return r
@@ -79,9 +77,9 @@ export function applyFixes(input: Row[], fx: FixSet, opts: { ctx: number; nearTh
     note('normaliseRoles', changed, `${changed} rows rewritten`)
   }
   if (fx.stripPii) {
-    const n = { v: 0 }
-    rows = rows.map(r => ({ ...r, messages: redactTurns(r.messages, n)!, chosen: redactTurns(r.chosen, n), rejected: redactTurns(r.rejected, n) }))
-    note('stripPii', n.v, `${n.v} values replaced`)
+    let n = 0
+    rows = rows.map(r => { const x = redactRow(r); n += x.count; return x.row })
+    note('stripPii', n, `${n} values replaced`)
   }
   if (fx.trimToContext) {
     let trimmed = 0, dropped = 0

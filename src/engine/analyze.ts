@@ -1,6 +1,7 @@
 // Runs every check over a dataset and returns one report the UI, data card and versions all read from.
-import { balance, boilerplate, detectLanguage, inferLabels, isRefusal, opener, scanPii, type PiiType } from './content.ts'
+import { balance, boilerplate, detectLanguage, inferLabels, isRefusal, opener, type PiiType } from './content.ts'
 import { findDuplicates, findLeaks, rowText } from './dedupe.ts'
+import { rowPii } from './pii.ts'
 import { billedTokens, rowTokens, turnsTokens } from './tokens.ts'
 import { ISSUES, type Format, type Issue, type IssueCode, type Row } from './types.ts'
 import { validateRow } from './validate.ts'
@@ -85,7 +86,7 @@ export function analyze(rows: Row[], opts: Options = DEFAULT_OPTIONS, parseError
   const finals: string[] = []
   const perLang: string[] = []
   rows.forEach((r, i) => {
-    const hits = scanPii(texts[i])
+    const hits = rowPii(r)
     if (hits.length) {
       piiRows++
       const kinds = [...new Set(hits.map(h => h.type))]
