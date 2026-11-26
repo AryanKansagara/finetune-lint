@@ -69,6 +69,24 @@ export function groups(n: number, pairs: [number, number][]): number[][] {
   return [...m.values()]
 }
 
+/** Buckets up to this size compare every pair; larger ones would be quadratic. */
+const FULL_COMPARE = 400
+const LEADERS = 100, WINDOW = 8
+
+/**
+ * Enough similar pairs to join the groups in a large bucket without comparing all of them: each row against one
+ * representative of every group met so far, and against its neighbours once the rows are sorted by signature.
+ */
+function bigBucketPairs(rows: number[], sigs: Uint32Array[], threshold: number): [number, number, number][] {
+  const out: [number, number, number][] = []
+  const link = (a: number, b: number) => { const sim = estJaccard(sigs[a], sigs[b]); if (sim < threshold) return false; out.push([a, b, sim]); return true }
+  const leaders: number[] = []
+  for (const i of rows) if (!leaders.some(l => link(l, i)) && leaders.length < LEADERS) leaders.push(i)
+  const sorted = [...rows].sort((a, b) => { const x = sigs[a], y = sigs[b]; for (let k = 0; k < PERMS; k++) if (x[k] !== y[k]) return x[k] - y[k]; return a - b })
+  for (let i = 0; i < sorted.length; i++) for (let j = i + 1; j <= i + WINDOW && j < sorted.length; j++) link(sorted[i], sorted[j])
+  return out
+}
+
 export interface DupResult {
   keys: string[]
   /** Groups of row indexes with identical normalised text (size > 1), first index is the one kept */
@@ -98,7 +116,14 @@ export function findDuplicates(texts: string[], threshold = 0.8): DupResult {
   }
   const seen = new Set<string>(), pairs: { a: number; b: number; sim: number }[] = []
   for (const l of buckets.values()) {
-    if (l.length < 2 || l.length > 400) continue
+    if (l.length < 2) continue
+    if (l.length > FULL_COMPARE) {
+      for (const [a, b, sim] of bigBucketPairs(l, sigs, threshold)) {
+        const k = a < b ? `${a},${b}` : `${b},${a}`
+        if (!seen.has(k)) { seen.add(k); pairs.push({ a: Math.min(a, b), b: Math.max(a, b), sim }) }
+      }
+      continue
+    }
     for (let x = 0; x < l.length; x++) for (let y = x + 1; y < l.length; y++) {
       const a = l[x], b = l[y], k = a < b ? `${a},${b}` : `${b},${a}`
       if (seen.has(k)) continue
@@ -111,20 +136,23 @@ export function findDuplicates(texts: string[], threshold = 0.8): DupResult {
   return { keys, exact, near, pairs, sigs }
 }
 
+/** Key under which two rows count as having the same prompt, or null when the prompt is too short to tell. */
+export const leakPromptKey = (r: Row) => { const p = promptText(r); return normText(p).length > 12 ? textKey(p) : null }
+
 /** Eval rows whose prompt matches a train prompt exactly, or whose full text is a near duplicate of a train row. */
 export function findLeaks(rows: Row[], train: number[], evalIdx: number[], sigs: Uint32Array[], threshold = 0.8): { evalIdx: number; trainIdx: number; kind: 'exact prompt' | 'near duplicate'; sim: number }[] {
   if (!train.length || !evalIdx.length) return []
   const out: { evalIdx: number; trainIdx: number; kind: 'exact prompt' | 'near duplicate'; sim: number }[] = []
   const tp = new Map<string, number>()
-  for (const i of train) { const k = textKey(promptText(rows[i])); if (!tp.has(k)) tp.set(k, i) }
+  for (const i of train) { const k = leakPromptKey(rows[i]); if (k !== null && !tp.has(k)) tp.set(k, i) }
   const buckets = new Map<string, number[]>()
   for (const i of train) {
     const s = sigs[i]
     for (const k of bandKeys(s)) { const l = buckets.get(k); if (l) l.push(i); else buckets.set(k, [i]) }
   }
   for (const e of evalIdx) {
-    const pk = textKey(promptText(rows[e]))
-    if (normText(promptText(rows[e])).length > 12 && tp.has(pk)) { out.push({ evalIdx: e, trainIdx: tp.get(pk)!, kind: 'exact prompt', sim: 1 }); continue }
+    const pk = leakPromptKey(rows[e])
+    if (pk !== null && tp.has(pk)) { out.push({ evalIdx: e, trainIdx: tp.get(pk)!, kind: 'exact prompt', sim: 1 }); continue }
     const s = sigs[e]
     let best = -1, bestSim = 0
     for (const k of bandKeys(s)) for (const t of buckets.get(k) ?? []) { const sim = estJaccard(s, sigs[t]); if (sim > bestSim) { bestSim = sim; best = t } }

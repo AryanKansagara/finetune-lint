@@ -77,7 +77,15 @@ export function normalise(o: unknown, line: number): Row | null {
   if ('chosen' in o || 'rejected' in o) {
     // Prompt key varies: prompt (TRL, UltraFeedback), question (Intel orca_dpo_pairs), input/instruction (distilabel, Alpaca-style DPO).
     const pk = ['prompt', 'question', 'input', 'instruction'].find(k => typeof o[k] === 'string' || Array.isArray(o[k]))
-    const prompt = pk ? turns(o[pk], 'user') : Array.isArray(o.messages) ? o.messages.map(toMsg) : []
+    let source = pk ? o[pk] : undefined, promptKeys = [pk ?? 'prompt']
+    // Alpaca-style pairs (and CSV) put the task in one field and its input in another; both belong in the user turn, as in SFT rows.
+    const tasks = ['prompt', 'question', 'instruction'].filter(k => typeof o[k] === 'string' && o[k].trim())
+    if (tasks.length === 1 && typeof source === 'string' && typeof o.input === 'string') {
+      const task = o[tasks[0]] as string, input = o.input.trim()
+      const joined = !input || task.trim() === input || task.includes('\n' + input) ? task : splitTranscript(task) || splitTranscript(o.input) ? null : task + '\n\n' + o.input
+      if (joined !== null) { source = joined; promptKeys = [tasks[0], 'input'] }
+    }
+    const prompt = pk ? turns(source, 'user') : Array.isArray(o.messages) ? o.messages.map(toMsg) : []
     if ('system' in o && typeof o.system === 'string' && o.system) prompt.unshift({ role: 'system', content: o.system })
     let chosen = turns(o.chosen, 'assistant'), rejected = turns(o.rejected, 'assistant')
     const same = (a: Msg, b: Msg) => a.role === b.role && a.content.trim() === b.content.trim()
@@ -91,7 +99,7 @@ export function normalise(o: unknown, line: number): Row | null {
       while (k < chosen.length - 1 && k < rejected.length - 1 && same(chosen[k], rejected[k])) k++
       prompt.push(...chosen.slice(0, k)); chosen = chosen.slice(k); rejected = rejected.slice(k)
     }
-    return { line, format: 'dpo', messages: prompt, chosen, rejected, label, extra: extras(o, [pk ?? 'prompt', 'messages', 'chosen', 'rejected', 'system', ...LABEL_KEYS]) }
+    return { line, format: 'dpo', messages: prompt, chosen, rejected, label, extra: extras(o, [...promptKeys, 'messages', 'chosen', 'rejected', 'system', ...LABEL_KEYS]) }
   }
   if (Array.isArray(o.messages)) return { line, format: 'openai', messages: o.messages.map(toMsg), label, extra: extras(o, ['messages', ...LABEL_KEYS]) }
   if (Array.isArray(o.conversations)) {
